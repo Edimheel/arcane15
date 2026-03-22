@@ -1,0 +1,1186 @@
+/* ============================================================
+   GLOBAL & FENÊTRE
+   ============================================================ */
+
+.arcane15.sheet.actor {
+    min-width: 700px;
+    min-height: 600px;
+}
+
+.arcane15.sheet .window-content {
+    background: #ffffff !important;
+    padding: 0;
+    color: #000000 !important;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 14px;
+}
+
+/* --- CONTENEUR --- */
+.sheet-container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 15px;
+    box-sizing: border-box;
+    overflow: hidden;
+    background-color: #ffffff;
+}
+
+/* ============================================================
+   INPUTS & SAISIE (TEXTE & NOMBRE)
+   ============================================================ */
+
+.sheet-container input[type="text"],
+.sheet-container input[type="number"],
+.sheet-container textarea {
+    color: #000000 !important;
+    background-color: #f4f4f4 !important; /* Gris très clair pour repérer la case */
+    border: 1px solid #888 !important;
+    border-radius: 0;
+    font-family: inherit;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+.sheet-container input:focus,
+.sheet-container textarea:focus {
+    background-color: #ffffff !important;
+    border: 1px solid #000 !important;
+    box-shadow: none !important;
+    outline: none;
+}
+
+.sheet-container ::placeholder {
+    color: #888 !important;
+    font-style: italic;
+    font-weight: normal;
+}
+
+/* ============================================================
+   CORRECTION DES CASES À COCHER (CHECKBOX)
+   ============================================================ */
+
+/* Style par défaut (NON COCHÉ) */
+.sheet-container input[type="checkbox"] {
+    -webkit-appearance: none !important; /* Enlève le style Chrome/Foundry */
+    appearance: none !important;
+    width: 16px !important;
+    height: 16px !important;
+    background-color: #ffffff !important; /* FORCE LE BLANC */
+    border: 1px solid #000000 !important; /* Bordure noire */
+    border-radius: 0 !important;          /* Carré parfait */
+    cursor: pointer;
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: none !important;
+    position: relative;
+}
+
+/* Style (COCHÉ) */
+.sheet-container input[type="checkbox"]:checked {
+    background-color: #000000 !important; /* Devient NOIR */
+    border: 1px solid #000000 !important;
+}
+
+/* Le petit symbole "check" ou "croix" quand c'est coché */
+.sheet-container input[type="checkbox"]:checked::after {
+    content: '✔'; /* Symbole Valider */
+    font-size: 12px;
+    color: #ffffff !important; /* Symbole BLANC */
+    font-weight: bold;
+    display: block;
+    line-height: 1;
+}
+
+/* ============================================================
+   HEADER & STATS
+   ============================================================ */
+
+.sheet-header-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 4px solid #000;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    flex: 0 0 auto;
+}
+
+.identity-block { flex: 1; }
+
+.identity-block .field-large input {
+    font-size: 24px;
+    height: 40px;
+    width: 100%;
+    margin-bottom: 5px;
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 2px solid #000 !important;
+}
+
+.identity-block .field-sub input {
+    font-size: 16px;
+    width: 100%;
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 1px dotted #000 !important;
+    font-style: italic;
+}
+
+.logo-mini {
+    font-size: 20px;
+    font-weight: 900;
+    border: 3px solid #000;
+    padding: 5px 10px;
+    background: #000;
+    color: #fff !important;
+    transform: rotate(-2deg);
+    margin-left: 20px;
+}
+
+/* Barre de stats */
+.stats-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #e0e0e0;
+    border: 2px solid #000;
+    padding: 8px;
+    margin-bottom: 15px;
+    flex: 0 0 auto;
+}
+
+.stat-box {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+}
+
+.stat-box label {
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+    color: #000;
+}
+
+.stat-box input {
+    width: 50px;
+    font-size: 20px;
+    text-align: center;
+    background-color: #fff !important;
+    border: 2px solid #000 !important;
+    height: 35px;
+}
+
+.vl { width: 2px; height: 30px; background: #000; margin: 0 10px; opacity: 0.5; }
+
+/* ============================================================
+   NAVIGATION (ONGLETS)
+   ============================================================ */
+
+.sheet-tabs {
+    display: flex;
+    border-bottom: 3px solid #000;
+    margin-bottom: 15px;
+    flex: 0 0 auto;
+    background: #ccc;
+}
+
+.sheet-tabs .item {
+    flex: 1;
+    text-align: center;
+    padding: 10px;
+    font-weight: bold;
+    text-transform: uppercase;
+    cursor: pointer;
+    background: #ccc;
+    color: #444;
+    border-right: 1px solid #999;
+}
+
+.sheet-tabs .item:hover { background: #bbb; color: #000; }
+
+.sheet-tabs .item.active {
+    background: #fff;
+    color: #000;
+    border-bottom: 3px solid #fff;
+    margin-bottom: -3px;
+}
+
+/* ============================================================
+   CONTENU DES ONGLETS
+   ============================================================ */
+
+.sheet-body {
+    flex: 1;
+    overflow-y: auto;
+    position: relative;
+    padding-right: 5px;
+}
+
+.tab { display: none; }
+.tab.active { display: block !important; }
+
+/* ============================================================
+   COMPÉTENCES
+   ============================================================ */
+
+.comp-title {
+    background: #000;
+    color: #fff !important;
+    padding: 5px 10px;
+    text-transform: uppercase;
+    margin: 15px 0 10px 0;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.skills-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+}
+
+.skill-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.skill-row .label { font-weight: bold; color: #000; white-space: nowrap; }
+.skill-row .dots { flex: 1; border-bottom: 2px dotted #aaa; margin: 0 5px; position: relative; top: -4px; }
+
+/* Score */
+.skill-row .score {
+    width: 40px;
+    height: 24px;
+    text-align: center;
+    background-color: #fff !important;
+    border: 2px solid #000 !important;
+    margin-right: 5px;
+}
+
+.skill-row .bonus {
+    display: flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: bold;
+    color: #000;
+}
+
+/* Inputs Label (Art, Langue...) */
+.skill-row.special .label input {
+    width: 90px;
+    height: 20px;
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 1px solid #000 !important;
+    padding: 0;
+    font-style: italic;
+    font-weight: normal;
+}
+
+/* ============================================================
+   BIO SECONDAIRE
+   ============================================================ */
+.bio-row { display: flex; gap: 10px; margin-bottom: 5px; }
+.bio-row .field { display: flex; flex: 1; align-items: center; }
+.bio-row label { font-weight: bold; margin-right: 5px; min-width: 60px; color: #000; }
+.bio-row input { background: transparent !important; border: none !important; border-bottom: 1px dotted #000 !important; }
+
+/* ============================================================
+   COMBAT & TEXTAREAS
+   ============================================================ */
+
+.combat-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+.combat-table th { background: #000; color: #fff; padding: 5px; text-align: left; font-weight: bold; }
+.combat-table td { border: 1px solid #000; padding: 0; }
+.combat-table input { border: none !important; background: transparent !important; width: 100%; height: 100%; padding: 5px; }
+.combat-table input:focus { background: #eeffee !important; }
+
+.textarea-box textarea {
+    width: 100%;
+    min-height: 100px;
+    background: #fff !important;
+    border: 2px solid #000 !important;
+    color: #000 !important;
+    padding: 5px;
+}
+
+/* Ascenseurs */
+.sheet-body::-webkit-scrollbar { width: 10px; }
+.sheet-body::-webkit-scrollbar-track { background: #ddd; }
+.sheet-body::-webkit-scrollbar-thumb { background: #555; border-radius: 5px; }
+.sheet-body::-webkit-scrollbar-thumb:hover { background: #000; }
+
+
+/* === AJOUTS POUR DIALOGUE ET CLIC COMPÉTENCE === */
+
+/* Curseur sur le label de compétence */
+.skill-row .label.skill-roll {
+    cursor: pointer;
+    transition: color 0.2s;
+    position: relative;
+}
+.skill-row .label.skill-roll:hover {
+    color: #555;
+    text-decoration: underline;
+}
+/* Petit dé pour indiquer l'action */
+.skill-row .label.skill-roll:hover::before {
+    content: '🎲';
+    font-size: 10px;
+    position: absolute;
+    left: -15px;
+}
+
+/* FENÊTRE DE DIALOGUE (Choix Carte) */
+.skill-roll-dialog {
+    padding: 10px;
+}
+.card-selection-grid {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+}
+.dialog-card {
+    width: 60px;
+    height: 90px;
+    background: #fff;
+    border: 2px solid #000;
+    border-radius: 5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+    transition: transform 0.2s;
+}
+.dialog-card:hover {
+    transform: scale(1.1);
+    border-color: #d00;
+}
+.dialog-card .card-inner {
+    text-align: center;
+    font-weight: bold;
+}
+.d-val { font-size: 20px; display: block; }
+.d-suit { font-size: 10px; text-transform: uppercase; }
+
+.modifier-box {
+    margin-top: 20px;
+    text-align: center;
+    border-top: 1px solid #ccc;
+    padding-top: 15px;
+}
+.modifier-box input {
+    width: 60px;
+    font-size: 18px;
+    text-align: center;
+    padding: 5px;
+}
+
+/* RÉSULTAT CHAT */
+.arcane-chat-result {
+    background: #fff;
+    border: 2px solid #000;
+    padding: 10px;
+    color: #000;
+    font-family: 'Courier New', Courier, monospace;
+}
+.arcane-chat-result header {
+    border-bottom: 2px solid #000;
+    text-align: center;
+    font-weight: 900;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+.result-details .line { margin-bottom: 4px; }
+.result-total {
+    margin-top: 10px;
+    background: #000;
+    color: #fff;
+    text-align: center;
+    font-size: 18px;
+    font-weight: bold;
+    padding: 5px;
+}
+/* === STYLE DIALOGUE CARTES === */
+.skill-roll-dialog {
+    padding: 10px;
+}
+
+.card-selection-grid {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin: 15px 0;
+    flex-wrap: wrap;
+}
+
+/* === DIALOGUE DE SÉLECTION DE CARTE === */
+.card-selection-grid {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin: 15px 0;
+    flex-wrap: wrap;
+}
+
+.dialog-card {
+    width: 70px;
+    height: 110px;
+    border: 2px solid #000;
+    border-radius: 5px;
+    background-color: #fff;
+    cursor: pointer;
+    position: relative;
+    box-shadow: 2px 2px 5px rgba(0,0,0,0.4);
+    transition: transform 0.2s;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.dialog-card:hover {
+    transform: scale(1.1);
+    border-color: #d00;
+    z-index: 10;
+}
+
+/* La balise img prend tout l'espace */
+.dialog-card .card-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; /* Remplit le cadre sans déformer */
+    border: none;
+}
+
+/* Le petit label par dessus */
+.dialog-card .card-label {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    background: rgba(255,255,255,0.85);
+    color: #000;
+    font-weight: 900;
+    text-align: center;
+    font-size: 12px;
+    padding: 2px 0;
+    border-top: 1px solid #000;
+}
+/* Le conteneur de l'image */
+.card-visuel {
+    width: 100%;
+    height: 100%;
+    background-size: cover; /* Remplit tout le cadre */
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* Le petit label par dessus */
+.card-label {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    background: rgba(255,255,255,0.85);
+    color: #000;
+    font-weight: 900;
+    text-align: center;
+    font-size: 12px;
+    padding: 2px 0;
+    border-top: 1px solid #000;
+}
+
+.modifier-box {
+    margin-top: 20px;
+    text-align: center;
+    border-top: 1px solid #ccc;
+    padding-top: 10px;
+}
+
+.modifier-box input {
+    width: 60px;
+    text-align: center;
+    font-size: 18px;
+    padding: 5px;
+}
+/* ============================
+   AXV Combat Board UI
+   ============================ */
+
+.axv-board { display: flex; flex-direction: column; gap: 10px; }
+
+.axv-board-header {
+  display:flex; justify-content:space-between; align-items:flex-start; gap:10px;
+  padding:8px 10px; border-radius:12px;
+  border:1px solid rgba(255,255,255,.15); background:rgba(0,0,0,.20);
+}
+
+.axv-board-zones { display:flex; gap:10px; }
+
+.axv-zone {
+  flex:1; min-height:110px; padding:10px;
+  border-radius:12px; border:2px dashed rgba(255,255,255,.18);
+  background:rgba(0,0,0,.12);
+  display:flex; flex-direction:column; gap:8px;
+}
+
+.axv-zone-label { font-weight:900; opacity:.9; }
+.axv-zone-card { min-height:58px; display:flex; align-items:center; justify-content:flex-start; }
+
+.axv-board-hand {
+  padding:8px 10px; border-radius:12px;
+  border:1px solid rgba(255,255,255,.15); background:rgba(0,0,0,.20);
+}
+
+.axv-hand-header { font-weight:900; margin-bottom:6px; }
+.axv-hand-container { display:flex; flex-wrap:wrap; gap:8px; }
+.axv-board-hint { margin-top:8px; opacity:.85; font-size:12px; }
+
+.axv-card { cursor: grab; }
+.axv-card:active { cursor: grabbing; }
+
+
+/* ============================
+   AXV Chat cards sizing only
+   Keep Foundry native chat scrolling/layout
+   ============================ */
+.chat-message,
+.chat-message .message-content {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+.chat-message .message-content {
+  overflow-x: hidden !important;
+}
+
+.chat-message .axv-chat-card {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+}
+
+.chat-message .axv-chat-card * {
+  box-sizing: border-box !important;
+}
+
+.chat-message .axv-chat-card img {
+  max-width: 100% !important;
+  height: auto !important;
+}
+
+
+/* ============================================================
+   ARCANE XV — DIALOGUES COMBAT / INITIATIVE
+   Refonte visuelle unifiée
+   ============================================================ */
+
+.window-app:has([id^="axv-combat-"]),
+.window-app:has([id^="axv-init-"]) {
+  border-radius: 22px !important;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45) !important;
+}
+
+.window-app:has([id^="axv-combat-"]) .window-header,
+.window-app:has([id^="axv-init-"]) .window-header {
+  background: linear-gradient(90deg, rgba(18, 12, 20, 0.98), rgba(45, 20, 18, 0.96)) !important;
+  color: #f7eadf !important;
+  border-bottom: 1px solid rgba(248, 142, 85, 0.22) !important;
+}
+
+.window-app:has([id^="axv-combat-"]) .window-title,
+.window-app:has([id^="axv-init-"]) .window-title {
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.window-app:has([id^="axv-combat-"]) .window-content,
+.window-app:has([id^="axv-init-"]) .window-content {
+  padding: 14px !important;
+  background:
+    radial-gradient(circle at top, rgba(248, 142, 85, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(9, 8, 14, 0.98), rgba(16, 12, 18, 0.98)) !important;
+  color: #f3e8dc !important;
+}
+
+[id^="axv-combat-"] .axv-btn:hover,
+[id^="axv-init-"] .axv-init-card:hover {
+  filter: brightness(1.05);
+}
+
+[id^="axv-combat-"] .axv-pp-line input[type="checkbox"] {
+  margin-top: 2px;
+}
+
+[id^="axv-combat-"] .axv-zone-slot .axv-card {
+  margin: 0;
+}
+
+[id^="axv-combat-"] .axv-actions {
+  backdrop-filter: blur(6px);
+}
+
+[id^="axv-combat-"] .axv-summary-card,
+[id^="axv-combat-"] .axv-col,
+[id^="axv-combat-"] .axv-panel,
+[id^="axv-combat-"] .axv-hand-shell,
+[id^="axv-combat-"] .axv-pp-box,
+[id^="axv-combat-"] .axv-zone,
+[id^="axv-init-"] .axv-init-head,
+[id^="axv-init-"] .axv-init-card,
+[id^="axv-init-"] .axv-init-status {
+  backdrop-filter: blur(3px);
+}
+
+@media (max-width: 1080px) {
+  [id^="axv-combat-"] .axv-actions {
+    justify-content: stretch;
+    flex-wrap: wrap;
+  }
+
+  [id^="axv-combat-"] .axv-actions .axv-btn {
+    flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .window-app:has([id^="axv-combat-"]) .window-content,
+  .window-app:has([id^="axv-init-"]) .window-content {
+    padding: 10px !important;
+  }
+}
+
+
+/* ============================================================
+   ARCANE XV — FIX DIALOGUES NON COUPÉS
+   ============================================================ */
+.window-app:has([id^="axv-combat-"]) {
+    width: min(1220px, calc(100vw - 32px)) !important;
+    height: min(920px, calc(100vh - 32px)) !important;
+    max-width: calc(100vw - 32px) !important;
+    max-height: calc(100vh - 32px) !important;
+}
+
+.window-app:has([id^="axv-combat-"]) .window-content {
+    height: calc(100% - 36px) !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+[id^="axv-combat-"] {
+    height: 100%;
+}
+
+[id^="axv-combat-"] .axv-wrap {
+    height: 100%;
+    min-height: 0;
+}
+
+[id^="axv-combat-"] .axv-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    padding-bottom: 8px;
+}
+
+[id^="axv-combat-"] .axv-actions {
+    position: static !important;
+    margin-top: auto;
+    flex: 0 0 auto;
+}
+
+[id^="axv-combat-"] .axv-row,
+[id^="axv-combat-"] .axv-summary {
+    min-width: 0;
+}
+
+@media (max-width: 1080px) {
+    .window-app:has([id^="axv-combat-"]) {
+        width: calc(100vw - 16px) !important;
+        height: calc(100vh - 16px) !important;
+        max-width: calc(100vw - 16px) !important;
+        max-height: calc(100vh - 16px) !important;
+    }
+}
+
+
+
+/* === ARCANE XV compact combat/init windows === */
+.window-app:has([id^="axv-combat-"]),
+.window-app:has([id^="axv-init-"]) {
+  width: auto !important;
+  max-width: min(1080px, 72vw) !important;
+}
+
+.window-app:has([id^="axv-combat-"]) .window-content,
+.window-app:has([id^="axv-init-"]) .window-content {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+[id^="axv-combat-"] .axv-wrap,
+[id^="axv-init-"] .axv-wrap {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+}
+
+[id^="axv-combat-"] .axv-body,
+[id^="axv-init-"] .axv-body {
+  overflow: hidden !important;
+}
+
+[id^="axv-combat-"] .axv-head,
+[id^="axv-init-"] .axv-head {
+  padding: 12px 14px !important;
+  border-radius: 16px !important;
+}
+
+[id^="axv-combat-"] .axv-summary,
+[id^="axv-init-"] .axv-summary {
+  gap: 10px !important;
+}
+
+[id^="axv-combat-"] .axv-summary-card,
+[id^="axv-init-"] .axv-summary-card {
+  min-height: 66px !important;
+  padding: 10px 12px !important;
+  border-radius: 14px !important;
+}
+
+[id^="axv-combat-"] .axv-col,
+[id^="axv-init-"] .axv-col {
+  padding: 10px !important;
+}
+
+[id^="axv-combat-"] .axv-hand {
+  gap: 8px !important;
+  flex-wrap: nowrap !important;
+  overflow: hidden !important;
+}
+
+[id^="axv-combat-"] .axv-card,
+[id^="axv-init-"] .axv-card,
+[id^="axv-init-"] .axv-init-card {
+  width: 82px !important;
+  max-width: 82px !important;
+}
+
+[id^="axv-combat-"] .axv-card img,
+[id^="axv-init-"] .axv-card img,
+[id^="axv-init-"] .axv-init-card img {
+  height: 116px !important;
+}
+
+[id^="axv-combat-"] .axv-pp-line,
+[id^="axv-init-"] .axv-pp-line {
+  margin: 6px 0 !important;
+  font-size: 11px !important;
+}
+
+[id^="axv-combat-"] .axv-zone,
+[id^="axv-init-"] .axv-zone {
+  min-height: 132px !important;
+  padding: 10px !important;
+}
+
+[id^="axv-combat-"] .axv-zone-slot,
+[id^="axv-init-"] .axv-zone-slot {
+  min-height: 94px !important;
+}
+
+[id^="axv-combat-"] .axv-actions,
+[id^="axv-init-"] .axv-actions {
+  padding: 10px 12px !important;
+  border-radius: 14px !important;
+}
+
+@media (max-width: 1200px) {
+  .window-app:has([id^="axv-combat-"]),
+  .window-app:has([id^="axv-init-"]) {
+    max-width: min(1000px, 78vw) !important;
+  }
+}
+
+
+/* ARCANE XV — Combat/Initiative compact fit */
+.window-app:has([id^="axv-combat-"]) { width:auto !important; }
+.window-app:has([id^="axv-combat-"]) .window-content { overflow:auto !important; }
+[id^="axv-combat-"] .axv-wrap { gap:8px !important; }
+[id^="axv-combat-"] .axv-body { gap:8px !important; overflow:hidden !important; }
+[id^="axv-combat-"] .axv-head { padding:10px 12px !important; border-radius:14px !important; }
+[id^="axv-combat-"] .axv-title { font-size:18px !important; }
+[id^="axv-combat-"] .axv-sub { font-size:11px !important; line-height:1.25 !important; max-width:620px !important; }
+[id^="axv-combat-"] .axv-pill { font-size:11px !important; padding:7px 12px !important; }
+[id^="axv-combat-"] .axv-summary { gap:8px !important; }
+[id^="axv-combat-"] .axv-summary-card { min-height:54px !important; padding:8px 10px !important; border-radius:12px !important; }
+[id^="axv-combat-"] .axv-summary-card .axv-value { font-size:13px !important; margin-top:4px !important; }
+[id^="axv-combat-"] .axv-summary-card .axv-meta { font-size:10px !important; margin-top:3px !important; }
+[id^="axv-combat-"] .axv-row { gap:8px !important; }
+[id^="axv-combat-"] .axv-col { padding:8px !important; gap:8px !important; }
+[id^="axv-combat-"] .axv-col h3 { font-size:15px !important; }
+[id^="axv-combat-"] .axv-mini { font-size:10px !important; line-height:1.2 !important; }
+[id^="axv-combat-"] .axv-hand-shell,
+[id^="axv-combat-"] .axv-panel,
+[id^="axv-combat-"] .axv-pp-box,
+[id^="axv-combat-"] .axv-result { padding:8px !important; border-radius:12px !important; }
+[id^="axv-combat-"] .axv-hand { gap:6px !important; padding-top:6px !important; }
+[id^="axv-combat-"] .axv-card { width:66px !important; border-radius:10px !important; }
+[id^="axv-combat-"] .axv-card img { height:92px !important; }
+[id^="axv-combat-"] .axv-card-meta { min-height:30px !important; padding:5px 6px 6px !important; }
+[id^="axv-combat-"] .axv-card-name,
+[id^="axv-combat-"] .axv-card-val { font-size:9px !important; }
+[id^="axv-combat-"] .axv-zones,
+[id^="axv-combat-"] .axv-pp { gap:8px !important; }
+[id^="axv-combat-"] .axv-zone { min-height:94px !important; padding:8px !important; border-radius:14px !important; }
+[id^="axv-combat-"] .axv-zone-slot { min-height:68px !important; }
+[id^="axv-combat-"] .axv-pp-line { margin:4px 0 !important; font-size:10px !important; }
+[id^="axv-combat-"] .axv-actions { padding:8px 10px !important; border-radius:14px !important; margin-top:0 !important; }
+[id^="axv-combat-"] .axv-btn { padding:8px 12px !important; border-radius:10px !important; }
+
+
+/* --- Ajustement hauteur + résumé attaquant + actions visibles --- */
+.window-app:has([id^="axv-combat-"]) {
+  min-width: 1020px !important;
+  max-width: 1120px !important;
+  min-height: 760px !important;
+  max-height: 860px !important;
+}
+.window-app:has([id^="axv-combat-"]) .window-content {
+  min-height: 760px !important;
+}
+[id^="axv-combat-"] .axv-wrap {
+  min-height: 730px !important;
+}
+[id^="axv-combat-"] .axv-body {
+  gap: 10px !important;
+}
+[id^="axv-combat-"] .axv-summary {
+  grid-template-columns: 1fr 1fr 0.92fr !important;
+}
+[id^="axv-combat-"] .axv-summary-card:last-child .axv-label {
+  color: #ffcca8 !important;
+}
+[id^="axv-combat-"] .axv-col {
+  gap: 10px !important;
+}
+[id^="axv-combat-"] .axv-zone {
+  min-height: 106px !important;
+}
+[id^="axv-combat-"] .axv-zone-slot {
+  min-height: 80px !important;
+}
+[id^="axv-combat-"] .axv-pp-box {
+  padding: 10px !important;
+}
+[id^="axv-combat-"] .axv-pp-line {
+  margin: 6px 0 !important;
+}
+[id^="axv-combat-"] .axv-actions {
+  display: flex !important;
+  visibility: visible !important;
+  min-height: 58px !important;
+  padding: 10px 12px !important;
+  margin-top: 4px !important;
+}
+[id^="axv-combat-"] .axv-actions .axv-btn {
+  min-width: 180px !important;
+}
+
+
+/* ARCANE XV — corrections lisibilité / stabilité fenêtre combat */
+.window-app:has([id^="axv-combat-"]) {
+  min-width: 1080px !important;
+  max-width: 1220px !important;
+}
+.window-app:has([id^="axv-combat-"]) .window-content {
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+[id^="axv-combat-"] .axv-wrap { height: 100% !important; }
+[id^="axv-combat-"] .axv-body { flex: 1 1 auto !important; overflow: hidden !important; }
+[id^="axv-combat-"] .axv-row { align-items: stretch; }
+[id^="axv-combat-"] .axv-col { min-height: 0; }
+[id^="axv-combat-"] .axv-actions { flex: 0 0 auto !important; }
+[id^="axv-combat-"] .axv-panel-title,
+[id^="axv-combat-"] .axv-hand-title,
+[id^="axv-combat-"] .axv-zone-title,
+[id^="axv-combat-"] .axv-summary-card .axv-label,
+[id^="axv-combat-"] .axv-kicker {
+  letter-spacing: .04em;
+}
+
+
+/* Stable combat sizing + red unusable cards */
+.window-app:has([id^="axv-combat-"]) .window-content { overflow: hidden !important; }
+.window-app:has([id^="axv-combat-"]) { max-width: min(1360px, calc(100vw - 64px)) !important; max-height: min(980px, calc(100vh - 64px)) !important; }
+.window-app:has([id^="axv-combat-"]) .axv-actions { padding-bottom: 14px !important; }
+
+
+/* ARCANE XV — main ajustée + actions toujours visibles */
+.window-app:has([id^="axv-combat-"]) .window-content {
+  display:flex !important;
+  flex-direction:column !important;
+  overflow:hidden !important;
+}
+[id^="axv-combat-"] .axv-wrap {
+  display:grid !important;
+  grid-template-rows:auto auto minmax(0,1fr) auto !important;
+  min-height:0 !important;
+}
+[id^="axv-combat-"] .axv-body {
+  min-height:0 !important;
+  overflow:auto !important;
+  padding-right:4px !important;
+}
+[id^="axv-combat-"] .axv-hand-shell {
+  width:fit-content !important;
+  max-width:100% !important;
+  min-height:0 !important;
+  align-self:flex-start !important;
+}
+[id^="axv-combat-"] .axv-hand {
+  display:inline-flex !important;
+  width:fit-content !important;
+  max-width:100% !important;
+  min-height:0 !important;
+}
+[id^="axv-combat-"] .axv-actions {
+  position:sticky !important;
+  bottom:0 !important;
+  z-index:8 !important;
+  margin-top:0 !important;
+  background:linear-gradient(180deg, rgba(14,10,18,.97), rgba(8,7,12,.995)) !important;
+}
+
+
+/* ARCANE XV — primes/pénalités sous la colonne adverse */
+[id^="axv-combat-"] .axv-pp-panel {
+  margin-top: 8px;
+  border-width: 2px !important;
+}
+
+[id^="axv-combat-"] .axv-pp-panel .axv-pp-box {
+  border-width: 2px !important;
+}
+
+
+/* ARCANE XV — groupement par camp */
+[id^="axv-combat-"] .axv-play-block {
+  margin-top: 8px !important;
+  padding: 8px !important;
+  border-radius: 18px !important;
+  border: 3px solid rgba(255,255,255,.14) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+[id^="axv-combat-"] .axv-play-block .axv-zones {
+  margin: 0 !important;
+  gap: 6px !important;
+}
+
+[id^="axv-combat-"] .axv-play-block .axv-zone {
+  border-width: 2px !important;
+}
+
+[id^="axv-combat-"] .axv-play-block .axv-pp-panel {
+  margin-top: 0 !important;
+  border-width: 2px !important;
+}
+
+[id^="axv-combat-"] .axv-play-block .axv-pp {
+  gap: 6px !important;
+  margin-top: 6px !important;
+}
+
+[id^="axv-combat-"] .axv-play-block .axv-pp-box {
+  border-width: 2px !important;
+}
+
+[id^="axv-combat-"] .axv-play-block--red {
+  background: linear-gradient(180deg, rgba(108,24,24,.88), rgba(78,16,16,.82)) !important;
+  border-color: rgba(214,108,108,.95) !important;
+  box-shadow: inset 0 0 0 1px rgba(255,180,180,.12) !important;
+}
+
+[id^="axv-combat-"] .axv-play-block--red .axv-zone,
+[id^="axv-combat-"] .axv-play-block--red .axv-pp-panel,
+[id^="axv-combat-"] .axv-play-block--red .axv-pp-box {
+  background: rgba(78,16,16,.18) !important;
+  border-color: rgba(236,151,114,.7) !important;
+}
+
+[id^="axv-combat-"] .axv-play-block--green {
+  background: linear-gradient(180deg, rgba(22,88,44,.70), rgba(16,58,30,.62)) !important;
+  border-color: rgba(145,224,168,.88) !important;
+  box-shadow: inset 0 0 0 1px rgba(210,255,222,.10) !important;
+}
+
+[id^="axv-combat-"] .axv-play-block--green .axv-zone,
+[id^="axv-combat-"] .axv-play-block--green .axv-pp-panel,
+[id^="axv-combat-"] .axv-play-block--green .axv-pp-box {
+  background: rgba(10,38,18,.14) !important;
+  border-color: rgba(145,224,168,.7) !important;
+}
+
+
+/* UI patch: colors are attached to role, not local player */
+[id^="axv-combat-"] .axv-col[data-side="attacker"] .axv-play-block{
+  background: linear-gradient(180deg, rgba(108,24,24,.88), rgba(78,16,16,.82)) !important;
+  border-color: rgba(214,108,108,.95) !important;
+  box-shadow: inset 0 0 0 1px rgba(255,180,180,.12) !important;
+}
+
+[id^="axv-combat-"] .axv-col[data-side="attacker"] .axv-play-block .axv-zone,
+[id^="axv-combat-"] .axv-col[data-side="attacker"] .axv-play-block .axv-pp-panel,
+[id^="axv-combat-"] .axv-col[data-side="attacker"] .axv-play-block .axv-pp-box{
+  background: rgba(78,16,16,.18) !important;
+  border-color: rgba(236,151,114,.7) !important;
+}
+
+[id^="axv-combat-"] .axv-col[data-side="defender"] .axv-play-block{
+  background: linear-gradient(180deg, rgba(22,88,44,.70), rgba(16,58,30,.62)) !important;
+  border-color: rgba(145,224,168,.88) !important;
+  box-shadow: inset 0 0 0 1px rgba(210,255,222,.10) !important;
+}
+
+[id^="axv-combat-"] .axv-col[data-side="defender"] .axv-play-block .axv-zone,
+[id^="axv-combat-"] .axv-col[data-side="defender"] .axv-play-block .axv-pp-panel,
+[id^="axv-combat-"] .axv-col[data-side="defender"] .axv-play-block .axv-pp-box{
+  background: rgba(10,38,18,.14) !important;
+  border-color: rgba(145,224,168,.7) !important;
+}
+
+
+/* PP panel keeps previous placement but its color follows the actual role */
+[id^="axv-combat-"] .axv-pp-panel--red{
+  background: linear-gradient(180deg, rgba(108,24,24,.88), rgba(78,16,16,.82)) !important;
+  border-color: rgba(214,108,108,.95) !important;
+}
+
+[id^="axv-combat-"] .axv-pp-panel--red .axv-pp-box{
+  background: rgba(78,16,16,.18) !important;
+  border-color: rgba(236,151,114,.7) !important;
+}
+
+[id^="axv-combat-"] .axv-pp-panel--green{
+  background: linear-gradient(180deg, rgba(22,88,44,.70), rgba(16,58,30,.62)) !important;
+  border-color: rgba(145,224,168,.88) !important;
+}
+
+[id^="axv-combat-"] .axv-pp-panel--green .axv-pp-box{
+  background: rgba(10,38,18,.14) !important;
+  border-color: rgba(145,224,168,.7) !important;
+}
+
+
+/* ===== Clean restart combat only ===== */
+[id^="axv-combat-"] .axv-summary{display:none !important;}
+[id^="axv-combat-"] .axv-wrap{grid-template-rows:auto minmax(0,1fr) auto !important;gap:10px !important;}
+[id^="axv-combat-"] .axv-body{overflow:auto !important;padding-right:4px !important;}
+[id^="axv-combat-"] .axv-row{align-items:start !important;gap:12px !important;}
+[id^="axv-combat-"] .axv-col{background:transparent !important;border:none !important;padding:0 !important;gap:8px !important;}
+[id^="axv-combat-"] .axv-col--self .axv-self-block{
+  border-radius:20px !important;padding:12px !important;border:3px solid rgba(145,224,168,.90) !important;
+  background:linear-gradient(180deg, rgba(18,92,40,.90), rgba(11,64,28,.86)) !important;
+}
+[id^="axv-combat-"] .axv-col--self[data-side="attacker"] .axv-self-block{
+  border-color:rgba(220,110,110,.92) !important;
+  background:linear-gradient(180deg, rgba(120,28,28,.90), rgba(82,18,18,.86)) !important;
+}
+[id^="axv-combat-"] .axv-col--self .axv-hand-shell,
+[id^="axv-combat-"] .axv-col--self .axv-pp-panel,
+[id^="axv-combat-"] .axv-col--self .axv-zone,
+[id^="axv-combat-"] .axv-col--self .axv-pp-box{
+  background:transparent !important;border-color:rgba(210,255,222,.72) !important;
+}
+[id^="axv-combat-"] .axv-col--self[data-side="attacker"] .axv-hand-shell,
+[id^="axv-combat-"] .axv-col--self[data-side="attacker"] .axv-pp-panel,
+[id^="axv-combat-"] .axv-col--self[data-side="attacker"] .axv-zone,
+[id^="axv-combat-"] .axv-col--self[data-side="attacker"] .axv-pp-box{
+  border-color:rgba(255,188,155,.72) !important;
+}
+[id^="axv-combat-"] .axv-col--self .axv-hand-shell{
+  width:fit-content !important;max-width:100% !important;align-self:flex-start !important;margin-bottom:8px !important;padding:8px !important;
+}
+[id^="axv-combat-"] .axv-col--self .axv-hand{
+  display:inline-flex !important;width:fit-content !important;max-width:100% !important;flex-wrap:nowrap !important;overflow:hidden !important;gap:8px !important;
+}
+[id^="axv-combat-"] .axv-col--self .axv-zones{gap:8px !important;margin-bottom:8px !important;}
+[id^="axv-combat-"] .axv-col--self .axv-zone{min-height:136px !important;padding:10px !important;}
+[id^="axv-combat-"] .axv-col--self .axv-zone-slot{min-height:92px !important;}
+[id^="axv-combat-"] .axv-col--self .axv-pp{gap:8px !important;}
+[id^="axv-combat-"] .axv-col--opponent .axv-opponent-played{
+  display:grid !important;grid-template-columns:1fr 1fr !important;gap:12px !important;margin-top:8px !important;
+}
+[id^="axv-combat-"] .axv-col--opponent .axv-zone--hidden{min-height:260px !important;padding:12px !important;}
+[id^="axv-combat-"] .axv-col--opponent .axv-zone--hidden .axv-zone-slot{
+  min-height:200px !important;display:flex !important;align-items:flex-start !important;justify-content:flex-start !important;
+}
+[id^="axv-combat-"] .axv-card--back{cursor:default !important;}
+[id^="axv-combat-"] .axv-actions{
+  position:static !important;min-height:72px !important;margin-top:8px !important;padding:12px 14px !important;
+  border-top:1px solid rgba(248,142,85,.18) !important;border-radius:0 0 18px 18px !important;
+  background:linear-gradient(180deg, rgba(10,8,12,.98), rgba(18,12,16,.98)) !important;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.03) !important;justify-content:flex-end !important;
+}
+[id^="axv-combat-"] .axv-card.is-restricted{
+  box-shadow:0 0 0 2px rgba(255,70,70,.9) inset, 0 0 14px rgba(255,70,70,.24) !important;
+  border-color:rgba(255,70,70,.9) !important;
+}
+
+
+/* ============================================================
+   ARCANE XV — COMBAT RESIZE / FOOTER VISIBILITY
+   Patch minimal
+   ============================================================ */
+
+.window-app:has([id^="axv-combat-"]) {
+  resize: both;
+  overflow: hidden;
+}
+
+.window-app:has([id^="axv-combat-"]) .window-content {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+[id^="axv-combat-"] .axv-wrap {
+  display: grid !important;
+  grid-template-rows: auto minmax(0, 1fr) auto !important;
+  height: 100% !important;
+  min-height: 0 !important;
+}
+
+[id^="axv-combat-"] .axv-body {
+  min-height: 0 !important;
+  overflow: auto !important;
+}
+
+[id^="axv-combat-"] .axv-actions {
+  position: static !important;
+  flex: 0 0 auto !important;
+  min-height: 72px !important;
+  margin-top: 8px !important;
+}
