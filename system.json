@@ -1,0 +1,23 @@
+{
+  "id": "arcane15",
+  "title": "Arcane XV",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "12",
+    "verified": "13"
+  },
+  "esmodules": [
+    "arcane15.js"
+  ],
+  "styles": [
+    "styles/arcane15.css"
+  ],
+  "documentTypes": {
+    "Actor": ["personnage"],
+    "Card": ["base"]
+  },
+  "url": "",
+  "manifest": "",
+  "download": "",
+  "socket": true
+}

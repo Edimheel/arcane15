@@ -1,0 +1,215 @@
+<div class="sheet-container">
+    
+    <header class="sheet-header-main">
+        <div class="identity-block">
+            <div class="portrait-block" style="display:flex;align-items:center;justify-content:center;width:96px;min-width:96px;">
+                <img class="character-portrait" src="{{actor.img}}" data-edit="img" title="{{actor.name}}" style="width:88px;height:88px;object-fit:cover;border-radius:10px;cursor:pointer;" />
+            </div>
+            <div class="identity-fields" style="flex:1;min-width:0;">
+                <div class="field-large"><input name="system.biographie.nom" type="text" value="{{system.biographie.nom}}" placeholder="Nom"/></div>
+                <div class="field-sub"><input name="system.biographie.profession" type="text" value="{{system.biographie.profession}}" placeholder="Profession"/></div>
+            </div>
+        </div>
+        <div class="logo-mini">ARCANE XV</div>
+    </header>
+
+    <section class="stats-bar">
+        <div class="stat-box"><label>DESTIN</label><input name="system.stats.destin" type="number" value="{{system.stats.destin}}"/></div>
+        <div class="stat-box"><label>VITALITÉ</label><input name="system.stats.vitalite" type="number" value="{{system.stats.vitalite}}"/></div>
+        <div class="stat-box"><label>BLESSURES</label><input name="system.stats.blessures" type="number" value="{{system.stats.blessures}}"/></div>
+        <div class="vl"></div>
+        <div class="stat-box"><label>SOMME</label><input name="system.stats.sommeMax" type="number" value="{{system.stats.sommeMax}}"/></div>
+        <div class="stat-box"><label>INITIATIVE</label><input name="system.stats.initiative" type="number" value="{{system.stats.initiative}}"/></div>
+        <div class="stat-box"><label>PROTECTION</label><input name="system.stats.protection" type="number" value="{{system.stats.protection}}"/></div>
+    </section>
+
+    <nav class="sheet-tabs tabs">
+        <a class="item" data-tab="competences">Compétences</a>
+        <a class="item" data-tab="combat">Combat</a>
+        <a class="item" data-tab="description">Description</a>
+    </nav>
+
+    <section class="sheet-body" data-axv-scroll-root="1">
+        
+        <div class="tab" data-tab="competences">
+            <div class="bio-row">
+                 <div class="field"><label>SECRET :</label><input name="system.biographie.unSecret" type="text" value="{{system.biographie.unSecret}}"/></div>
+            </div>
+            <div class="bio-row">
+                 <div class="field"><label>PASSION :</label><input name="system.biographie.unePassion" type="text" value="{{system.biographie.unePassion}}"/></div>
+                 <div class="field"><label>TIC :</label><input name="system.biographie.unTic" type="text" value="{{system.biographie.unTic}}"/></div>
+            </div>
+
+            <div class="skills-grid">
+                <div class="skill-column">
+                    <div class="skill-row"><span class="label skill-roll" data-key="acrobatie" title="Jeter !">Acrobatie</span><span class="dots"></span><input class="score score-input" data-key="acrobatie" type="number" value="{{system.competences.acrobatie.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.acrobatie.specialisation" {{checked system.competences.acrobatie.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="art1" title="Jeter !">Art (<input name="system.competences.art1.label" type="text" value="{{system.competences.art1.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="art1" type="number" value="{{system.competences.art1.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.art1.specialisation" {{checked system.competences.art1.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="art2" title="Jeter !">Art (<input name="system.competences.art2.label" type="text" value="{{system.competences.art2.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="art2" type="number" value="{{system.competences.art2.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.art2.specialisation" {{checked system.competences.art2.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="art3" title="Jeter !">Art (<input name="system.competences.art3.label" type="text" value="{{system.competences.art3.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="art3" type="number" value="{{system.competences.art3.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.art3.specialisation" {{checked system.competences.art3.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="athletisme" title="Jeter !">Athlétisme</span><span class="dots"></span><input class="score score-input" data-key="athletisme" type="number" value="{{system.competences.athletisme.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.athletisme.specialisation" {{checked system.competences.athletisme.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="autorite" title="Jeter !">Autorité</span><span class="dots"></span><input class="score score-input" data-key="autorite" type="number" value="{{system.competences.autorite.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.autorite.specialisation" {{checked system.competences.autorite.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="combat1" title="Jeter !">Combat (<input name="system.competences.combat1.label" type="text" value="{{system.competences.combat1.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="combat1" type="number" value="{{system.competences.combat1.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.combat1.specialisation" {{checked system.competences.combat1.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="combat2" title="Jeter !">Combat (<input name="system.competences.combat2.label" type="text" value="{{system.competences.combat2.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="combat2" type="number" value="{{system.competences.combat2.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.combat2.specialisation" {{checked system.competences.combat2.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="combat3" title="Jeter !">Combat (<input name="system.competences.combat3.label" type="text" value="{{system.competences.combat3.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="combat3" type="number" value="{{system.competences.combat3.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.combat3.specialisation" {{checked system.competences.combat3.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="connaissance1" title="Jeter !">Connaissance (<input name="system.competences.connaissance1.label" type="text" value="{{system.competences.connaissance1.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="connaissance1" type="number" value="{{system.competences.connaissance1.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.connaissance1.specialisation" {{checked system.competences.connaissance1.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="connaissance2" title="Jeter !">Connaissance (<input name="system.competences.connaissance2.label" type="text" value="{{system.competences.connaissance2.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="connaissance2" type="number" value="{{system.competences.connaissance2.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.connaissance2.specialisation" {{checked system.competences.connaissance2.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="connaissance3" title="Jeter !">Connaissance (<input name="system.competences.connaissance3.label" type="text" value="{{system.competences.connaissance3.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="connaissance3" type="number" value="{{system.competences.connaissance3.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.connaissance3.specialisation" {{checked system.competences.connaissance3.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="defense" title="Jeter !">Défense</span><span class="dots"></span><input class="score score-input" data-key="defense" type="number" value="{{system.competences.defense.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.defense.specialisation" {{checked system.competences.defense.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="discretion" title="Jeter !">Discrétion</span><span class="dots"></span><input class="score score-input" data-key="discretion" type="number" value="{{system.competences.discretion.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.discretion.specialisation" {{checked system.competences.discretion.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="documentation" title="Jeter !">Documentation</span><span class="dots"></span><input class="score score-input" data-key="documentation" type="number" value="{{system.competences.documentation.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.documentation.specialisation" {{checked system.competences.documentation.specialisation}}/> <label>+2</label></div></div>
+                </div>
+                <div class="skill-column">
+                    <div class="skill-row"><span class="label skill-roll" data-key="intelligence" title="Jeter !">Intelligence</span><span class="dots"></span><input class="score score-input" data-key="intelligence" type="number" value="{{system.competences.intelligence.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.intelligence.specialisation" {{checked system.competences.intelligence.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="eloquence" title="Jeter !">Éloquence</span><span class="dots"></span><input class="score score-input" data-key="eloquence" type="number" value="{{system.competences.eloquence.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.eloquence.specialisation" {{checked system.competences.eloquence.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="langue1" title="Jeter !">Langue (<input name="system.competences.langue1.label" type="text" value="{{system.competences.langue1.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="langue1" type="number" value="{{system.competences.langue1.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.langue1.specialisation" {{checked system.competences.langue1.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="langue2" title="Jeter !">Langue (<input name="system.competences.langue2.label" type="text" value="{{system.competences.langue2.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="langue2" type="number" value="{{system.competences.langue2.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.langue2.specialisation" {{checked system.competences.langue2.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="langue3" title="Jeter !">Langue (<input name="system.competences.langue3.label" type="text" value="{{system.competences.langue3.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="langue3" type="number" value="{{system.competences.langue3.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.langue3.specialisation" {{checked system.competences.langue3.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="muscle" title="Jeter !">Muscle</span><span class="dots"></span><input class="score score-input" data-key="muscle" type="number" value="{{system.competences.muscle.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.muscle.specialisation" {{checked system.competences.muscle.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="perception" title="Jeter !">Perception</span><span class="dots"></span><input class="score score-input" data-key="perception" type="number" value="{{system.competences.perception.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.perception.specialisation" {{checked system.competences.perception.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="pilotage1" title="Jeter !">Pilotage (<input name="system.competences.pilotage1.label" type="text" value="{{system.competences.pilotage1.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="pilotage1" type="number" value="{{system.competences.pilotage1.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.pilotage1.specialisation" {{checked system.competences.pilotage1.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="pilotage2" title="Jeter !">Pilotage (<input name="system.competences.pilotage2.label" type="text" value="{{system.competences.pilotage2.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="pilotage2" type="number" value="{{system.competences.pilotage2.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.pilotage2.specialisation" {{checked system.competences.pilotage2.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="pilotage3" title="Jeter !">Pilotage (<input name="system.competences.pilotage3.label" type="text" value="{{system.competences.pilotage3.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="pilotage3" type="number" value="{{system.competences.pilotage3.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.pilotage3.specialisation" {{checked system.competences.pilotage3.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="psychologie" title="Jeter !">Psychologie</span><span class="dots"></span><input class="score score-input" data-key="psychologie" type="number" value="{{system.competences.psychologie.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.psychologie.specialisation" {{checked system.competences.psychologie.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="reflexes" title="Jeter !">Réflexes</span><span class="dots"></span><input class="score score-input" data-key="reflexes" type="number" value="{{system.competences.reflexes.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.reflexes.specialisation" {{checked system.competences.reflexes.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="resistance" title="Jeter !">Résistance</span><span class="dots"></span><input class="score score-input" data-key="resistance" type="number" value="{{system.competences.resistance.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.resistance.specialisation" {{checked system.competences.resistance.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="soins" title="Jeter !">Soins</span><span class="dots"></span><input class="score score-input" data-key="soins" type="number" value="{{system.competences.soins.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.soins.specialisation" {{checked system.competences.soins.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="survie" title="Jeter !">Survie</span><span class="dots"></span><input class="score score-input" data-key="survie" type="number" value="{{system.competences.survie.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.survie.specialisation" {{checked system.competences.survie.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="technique1" title="Jeter !">Technique (<input name="system.competences.technique1.label" type="text" value="{{system.competences.technique1.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="technique1" type="number" value="{{system.competences.technique1.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.technique1.specialisation" {{checked system.competences.technique1.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row special"><span class="label skill-roll" data-key="technique2" title="Jeter !">Technique (<input name="system.competences.technique2.label" type="text" value="{{system.competences.technique2.label}}">)</span><span class="dots"></span><input class="score score-input" data-key="technique2" type="number" value="{{system.competences.technique2.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.technique2.specialisation" {{checked system.competences.technique2.specialisation}}/> <label>+2</label></div></div>
+                    <div class="skill-row"><span class="label skill-roll" data-key="volonte" title="Jeter !">Volonté</span><span class="dots"></span><input class="score score-input" data-key="volonte" type="number" value="{{system.competences.volonte.total}}"/><div class="bonus"><input type="checkbox" name="system.competences.volonte.specialisation" {{checked system.competences.volonte.specialisation}}/> <label>+2</label></div></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab" data-tab="combat">
+            <h2 class="comp-title">Combat</h2>
+            <div class="combat-section">
+                <table class="combat-table">
+                    <thead>
+                        <tr>
+                            <th>ARMES</th>
+                            <th>DÉGÂTS</th>
+                            <th>PORTÉE</th>
+                            <th>MUN.</th>
+                            <th>COMP.</th>
+                            <th class="center" style="width:40px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><input type="text" name="system.combat.arme1.nom" value="{{system.combat.arme1.nom}}"/></td>
+                            <td><input type="text" name="system.combat.arme1.degats" value="{{system.combat.arme1.degats}}" class="center"/></td>
+                            <td><input type="text" name="system.combat.arme1.portee" value="{{system.combat.arme1.portee}}" class="center"/></td>
+                            <td><input type="text" name="system.combat.arme1.munitions" value="{{system.combat.arme1.munitions}}" class="center"/></td>
+                            <td>
+                                <select name="system.combat.arme1.skillKey" data-weapon-path="system.combat.arme1.skillKey" class="axv-weapon-skill" data-current="{{system.combat.arme1.skillKey}}">
+                                    <option value="">—</option>
+                                    <option value="combat1">{{#if system.competences.combat1.label}}{{system.competences.combat1.label}}{{else}}Combat 1{{/if}}</option>
+                                    <option value="combat2">{{#if system.competences.combat2.label}}{{system.competences.combat2.label}}{{else}}Combat 2{{/if}}</option>
+                                    <option value="combat3">{{#if system.competences.combat3.label}}{{system.competences.combat3.label}}{{else}}Combat 3{{/if}}</option>
+                                </select>
+                            </td>
+                            <td class="center">
+                                {{#if system.combat.arme1.nom}}
+                                  <a class="axv-weapon-attack" data-weapon-key="arme1" title="Lancer une attaque">
+                                    <i class="fa-solid fa-swords"></i>
+                                  </a>
+                                {{/if}}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td><input type="text" name="system.combat.arme2.nom" value="{{system.combat.arme2.nom}}"/></td>
+                            <td><input type="text" name="system.combat.arme2.degats" value="{{system.combat.arme2.degats}}" class="center"/></td>
+                            <td><input type="text" name="system.combat.arme2.portee" value="{{system.combat.arme2.portee}}" class="center"/></td>
+                            <td><input type="text" name="system.combat.arme2.munitions" value="{{system.combat.arme2.munitions}}" class="center"/></td>
+                            <td>
+                                <select name="system.combat.arme2.skillKey" data-weapon-path="system.combat.arme2.skillKey" class="axv-weapon-skill" data-current="{{system.combat.arme2.skillKey}}">
+                                    <option value="">—</option>
+                                    <option value="combat1">{{#if system.competences.combat1.label}}{{system.competences.combat1.label}}{{else}}Combat 1{{/if}}</option>
+                                    <option value="combat2">{{#if system.competences.combat2.label}}{{system.competences.combat2.label}}{{else}}Combat 2{{/if}}</option>
+                                    <option value="combat3">{{#if system.competences.combat3.label}}{{system.competences.combat3.label}}{{else}}Combat 3{{/if}}</option>
+                                </select>
+                            </td>
+                            <td class="center">
+                                {{#if system.combat.arme2.nom}}
+                                  <a class="axv-weapon-attack" data-weapon-key="arme2" title="Lancer une attaque">
+                                    <i class="fa-solid fa-swords"></i>
+                                  </a>
+                                {{/if}}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td><input type="text" name="system.combat.arme3.nom" value="{{system.combat.arme3.nom}}"/></td>
+                            <td><input type="text" name="system.combat.arme3.degats" value="{{system.combat.arme3.degats}}" class="center"/></td>
+                            <td><input type="text" name="system.combat.arme3.portee" value="{{system.combat.arme3.portee}}" class="center"/></td>
+                            <td><input type="text" name="system.combat.arme3.munitions" value="{{system.combat.arme3.munitions}}" class="center"/></td>
+                            <td>
+                                <select name="system.combat.arme3.skillKey" data-weapon-path="system.combat.arme3.skillKey" class="axv-weapon-skill" data-current="{{system.combat.arme3.skillKey}}">
+                                    <option value="">—</option>
+                                    <option value="combat1">{{#if system.competences.combat1.label}}{{system.competences.combat1.label}}{{else}}Combat 1{{/if}}</option>
+                                    <option value="combat2">{{#if system.competences.combat2.label}}{{system.competences.combat2.label}}{{else}}Combat 2{{/if}}</option>
+                                    <option value="combat3">{{#if system.competences.combat3.label}}{{system.competences.combat3.label}}{{else}}Combat 3{{/if}}</option>
+                                </select>
+                            </td>
+                            <td class="center">
+                                {{#if system.combat.arme3.nom}}
+                                  <a class="axv-weapon-attack" data-weapon-key="arme3" title="Lancer une attaque">
+                                    <i class="fa-solid fa-swords"></i>
+                                  </a>
+                                {{/if}}
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td><input type="text" name="system.combat.arme4.nom" value="{{system.combat.arme4.nom}}"/></td>
+                            <td><input type="text" name="system.combat.arme4.degats" value="{{system.combat.arme4.degats}}" class="center"/></td>
+                            <td><input type="text" name="system.combat.arme4.portee" value="{{system.combat.arme4.portee}}" class="center"/></td>
+                            <td><input type="text" name="system.combat.arme4.munitions" value="{{system.combat.arme4.munitions}}" class="center"/></td>
+                            <td>
+                                <select name="system.combat.arme4.skillKey" data-weapon-path="system.combat.arme4.skillKey" class="axv-weapon-skill" data-current="{{system.combat.arme4.skillKey}}">
+                                    <option value="">—</option>
+                                    <option value="combat1">{{#if system.competences.combat1.label}}{{system.competences.combat1.label}}{{else}}Combat 1{{/if}}</option>
+                                    <option value="combat2">{{#if system.competences.combat2.label}}{{system.competences.combat2.label}}{{else}}Combat 2{{/if}}</option>
+                                    <option value="combat3">{{#if system.competences.combat3.label}}{{system.competences.combat3.label}}{{else}}Combat 3{{/if}}</option>
+                                </select>
+                            </td>
+                            <td class="center">
+                                {{#if system.combat.arme4.nom}}
+                                  <a class="axv-weapon-attack" data-weapon-key="arme4" title="Lancer une attaque">
+                                    <i class="fa-solid fa-swords"></i>
+                                  </a>
+                                {{/if}}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="tab" data-tab="description">
+            <h2 class="comp-title">Arcanes Majeurs</h2>
+            <div class="textarea-box"><textarea name="system.description.arcanes" rows="4">{{system.description.arcanes}}</textarea></div>
+            <h2 class="comp-title">Atouts</h2>
+            <div class="textarea-box"><textarea name="system.description.atouts" rows="4">{{system.description.atouts}}</textarea></div>
+            <h2 class="comp-title">Équipement</h2>
+            <div class="textarea-box"><textarea name="system.description.equipement" rows="6">{{system.description.equipement}}</textarea></div>
+            <h2 class="comp-title">Notes</h2>
+            <div class="textarea-box"><textarea name="system.description.notes" rows="8">{{system.description.notes}}</textarea></div>
+        </div>
+    </section>
+
+    <footer class="hand-hud">
+        <div class="hand-header">MAIN</div>
+        <div class="hand-container">
+            {{#each cards}}
+            <div class="hand-card" data-id="{{this.id}}">
+                <div class="card-inner"><span class="card-value">{{this.value}}</span><span class="card-suit">{{this.suit}}</span></div>
+            </div>
+            {{else}}
+            <div class="hand-empty">Aucune carte (Créez un nouvel acteur)</div>
+            {{/each}}
+        </div>
+    </footer>
+</div>

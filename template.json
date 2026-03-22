@@ -1,0 +1,6 @@
+{
+  "Actor": {
+    "types": ["personnage"],
+    "personnage": {}
+  }
+}
