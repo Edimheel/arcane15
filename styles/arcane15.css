@@ -1184,3 +1184,124 @@
   min-height: 72px !important;
   margin-top: 8px !important;
 }
+
+
+/* ============================================================
+   MAIN / CARTES SUR LA FICHE
+   ============================================================ */
+
+.hand-hud {
+    flex: 0 0 auto;
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 3px solid #000;
+}
+
+.hand-header {
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+}
+
+.hand-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.hand-card {
+    width: 88px;
+    padding: 4px;
+    border: 2px solid #000;
+    background: #fff;
+    box-sizing: border-box;
+    cursor: default;
+    transition: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.hand-card:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+.hand-card-image {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 2 / 3;
+    object-fit: cover;
+    pointer-events: none;
+}
+
+.hand-empty {
+    padding: 8px 10px;
+    font-style: italic;
+    color: #555;
+    border: 1px dashed #666;
+    background: #f2f2f2;
+}
+
+
+.textarea-box textarea,
+.axv-text-display {
+    display: block;
+    width: 100%;
+    min-height: 140px;
+    background: #fff !important;
+    border: 2px solid #000 !important;
+    color: #000 !important;
+    padding: 8px;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
+}
+
+.textarea-box textarea {
+    resize: vertical;
+    font-weight: normal;
+    line-height: 1.4;
+}
+
+.axv-text-display {
+    white-space: pre-wrap;
+}
+
+.axv-text-display:empty::before,
+.textarea-box textarea:placeholder-shown {
+    min-height: 120px;
+}
+
+.hand-card,
+.hand-card * {
+    cursor: default !important;
+    pointer-events: none;
+    user-select: none;
+}
+
+.hand-card-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.hand-card-label {
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.15;
+    min-height: 2.3em;
+    text-align: center;
+    color: #000;
+    word-break: break-word;
+}
+
+.hand-card-value {
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.1;
+    text-align: center;
+    color: #333;
+}
