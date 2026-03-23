@@ -16,6 +16,62 @@ console.log("[ARCANE XV][SHEET] base classes", {
   hasActorSheetV2: !!ActorSheetV2
 });
 
+const AXV_HAND_SHEET_HOOKS_KEY = "__arcane15HandSheetHooksRegistered";
+const AXV_HAND_RENDER_QUEUE = new Map();
+
+function axvCollectCardsContainerIds(docOrDocs) {
+  const ids = new Set();
+  const docs = Array.isArray(docOrDocs) ? docOrDocs : [docOrDocs];
+
+  for (const doc of docs) {
+    if (!doc) continue;
+
+    if (doc.documentName === "Card") {
+      const parent = doc.parent;
+      if (parent?.documentName === "Cards" && parent.id) ids.add(parent.id);
+      continue;
+    }
+
+    if (doc.documentName === "Cards" && doc.id) ids.add(doc.id);
+  }
+
+  return ids;
+}
+
+function axvRenderOpenSheetsForCards(ids) {
+  if (!ids?.size) return;
+
+  for (const actor of game.actors ?? []) {
+    const handId = actor.getFlag?.("arcane15", "hand");
+    const deckId = actor.getFlag?.("arcane15", "deck");
+    const pileId = actor.getFlag?.("arcane15", "pile");
+    if (!ids.has(handId) && !ids.has(deckId) && !ids.has(pileId)) continue;
+
+    const queued = AXV_HAND_RENDER_QUEUE.get(actor.id);
+    if (queued) clearTimeout(queued);
+
+    AXV_HAND_RENDER_QUEUE.set(actor.id, setTimeout(() => {
+      AXV_HAND_RENDER_QUEUE.delete(actor.id);
+      for (const app of Object.values(actor.apps ?? {})) {
+        if (app?.rendered) app.render(false);
+      }
+    }, 50));
+  }
+}
+
+function axvRegisterHandSheetHooks() {
+  if (globalThis[AXV_HAND_SHEET_HOOKS_KEY]) return;
+  globalThis[AXV_HAND_SHEET_HOOKS_KEY] = true;
+
+  const rerenderFromDoc = (doc) => axvRenderOpenSheetsForCards(axvCollectCardsContainerIds(doc));
+
+  for (const hookName of ["createCard", "updateCard", "deleteCard", "createCards", "updateCards", "deleteCards"]) {
+    Hooks.on(hookName, (doc) => rerenderFromDoc(doc));
+  }
+}
+
+axvRegisterHandSheetHooks();
+
 export class Arcane15ActorSheet extends HandlebarsApplicationMixin(ActorSheetV2) {
 
   static DEFAULT_OPTIONS = {
@@ -43,16 +99,36 @@ export class Arcane15ActorSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   async _prepareContext(options) {
     const actor = this.document;
 
+    const canViewHand = actor.isOwner && !(game.user?.isGM && actor.hasPlayerOwner);
+
     const context = {
       actor,
       system: actor.system,
       source: actor.toObject(),
-      cards: []
+      canViewHand,
+      cards: [],
+      enrichedDescription: {
+        arcanes: "",
+        atouts: "",
+        equipement: "",
+        notes: ""
+      }
     };
+
+    const enrichOptions = {
+      secrets: actor.isOwner,
+      rollData: actor.getRollData?.() ?? {},
+      relativeTo: actor
+    };
+
+    context.enrichedDescription.arcanes = await TextEditor.enrichHTML(actor.system?.description?.arcanes ?? "", enrichOptions);
+    context.enrichedDescription.atouts = await TextEditor.enrichHTML(actor.system?.description?.atouts ?? "", enrichOptions);
+    context.enrichedDescription.equipement = await TextEditor.enrichHTML(actor.system?.description?.equipement ?? "", enrichOptions);
+    context.enrichedDescription.notes = await TextEditor.enrichHTML(actor.system?.description?.notes ?? "", enrichOptions);
 
     // Main (hand) si déjà initialisée
     const handId = actor.getFlag("arcane15", "hand");
-    if (handId) {
+    if (canViewHand && handId) {
       const hand = game.cards.get(handId);
       if (hand) {
         // On prépare un tableau exploitable côté HBS
@@ -121,9 +197,79 @@ export class Arcane15ActorSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       input.addEventListener("change", this.#onSkillChange.bind(this));
     });
 
-    // --- Hand click (si tu l’utilises encore sur la fiche) ---
-    this.element.querySelectorAll(".hand-card").forEach(card => {
-      card.addEventListener("click", this.#onCardClick.bind(this));
+    // --- La main affichée sur la fiche est purement informative : pas de clic ---
+
+    // --- Rich text : contenu visible hors édition, éditeur explicite au clic ---
+    this.element.querySelectorAll(".axv-richtext-box").forEach(box => {
+      const toggle = box.querySelector(".axv-richtext-toggle");
+      const editor = box.querySelector("prose-mirror");
+      const display = box.querySelector(".axv-richtext-display");
+      const source = box.querySelector(".axv-richtext-source");
+      if (!toggle || !editor || !display || !source) return;
+
+      const closeEditor = () => {
+        editor.removeAttribute("open");
+        editor.hidden = true;
+        display.hidden = false;
+        toggle.textContent = "Modifier";
+      };
+
+      const openEditor = () => {
+        editor.value = String(source.value ?? "");
+        editor.hidden = false;
+        display.hidden = true;
+        editor.setAttribute("open", "");
+        toggle.textContent = "Fermer";
+        requestAnimationFrame(() => {
+          editor.value = String(source.value ?? "");
+          const editable = editor.querySelector('[contenteditable="true"]');
+          editable?.focus?.();
+        });
+      };
+
+      closeEditor();
+
+      if (!toggle.dataset.axvRichtextBound) {
+        toggle.dataset.axvRichtextBound = "1";
+
+        toggle.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          ev.stopPropagation();
+          if (editor.hidden) openEditor();
+          else closeEditor();
+        });
+
+        editor.addEventListener("open", () => {
+          toggle.textContent = "Fermer";
+        });
+
+        editor.addEventListener("close", () => {
+          closeEditor();
+        });
+
+        editor.addEventListener("save", async () => {
+          const path = String(editor.getAttribute("name") ?? "").trim();
+          if (!path) return;
+
+          const value = String(editor.value ?? "");
+          source.value = value;
+
+          try {
+            const enriched = await TextEditor.enrichHTML(value, {
+              secrets: this.document.isOwner,
+              rollData: this.document.getRollData?.() ?? {},
+              relativeTo: this.document
+            });
+
+            display.innerHTML = enriched || "";
+            await this.document.update({ [path]: value });
+            closeEditor();
+          } catch (e) {
+            console.error("[ARCANE XV][SHEET][RICHTEXT] save failed", e);
+            ui.notifications?.error?.("Impossible d'enregistrer le texte enrichi.");
+          }
+        });
+      }
     });
 
     // --- Réapplique la valeur courante des selects de compétence d'arme ---
