@@ -212,72 +212,73 @@
 /* ---------- Bandeau public ---------- */
 #axv-arcana-banner {
   position: fixed;
-  top: 8px;
+  top: 2px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 12000;
   display: flex;
-  gap: 10px;
+  gap: 8px;
   pointer-events: none;
-  max-width: min(1100px, calc(100vw - 160px));
-  flex-wrap: wrap;
+  max-width: min(1200px, calc(100vw - 80px));
+  flex-wrap: nowrap;
   justify-content: center;
+  align-items: flex-start;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 8px 6px;
+  scrollbar-width: none;
+}
+
+#axv-arcana-banner::-webkit-scrollbar {
+  display: none;
 }
 
 #axv-arcana-banner[hidden] {
   display: none !important;
 }
 
-.axv-banner-card {
-  display: grid;
-  grid-template-columns: 60px minmax(180px, 1fr);
-  gap: 10px;
-  align-items: center;
-  min-width: 260px;
-  max-width: 420px;
-  background: rgba(17, 16, 19, 0.96);
+#axv-arcana-banner:empty {
+  display: none !important;
+}
+
+#axv-arcana-banner > .axv-banner-card {
+  pointer-events: auto;
+  flex: 0 0 auto;
+  width: 92px;
+  min-width: 92px;
+  max-width: 92px;
+  min-height: 0;
+  background: rgba(17, 16, 19, 0.82);
   color: #fff;
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: 16px;
-  padding: 8px 10px;
-  box-shadow: 0 12px 22px rgba(0,0,0,.35);
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  padding: 5px;
+  box-shadow: 0 8px 18px rgba(0,0,0,.30);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.axv-banner-card.is-heroic {
+#axv-arcana-banner > .axv-banner-card.is-heroic {
   outline: 2px solid #ffd38a;
-  box-shadow: 0 0 0 2px rgba(255,211,138,.18), 0 14px 24px rgba(0,0,0,.42);
+  box-shadow: 0 0 0 2px rgba(255,211,138,.16), 0 10px 20px rgba(0,0,0,.38);
 }
 
-.axv-banner-card img {
-  width: 56px;
-  height: 84px;
+#axv-arcana-banner > .axv-banner-card img {
+  display: block;
+  width: 82px;
+  height: auto;
+  max-height: 124px;
   object-fit: cover;
   border-radius: 8px;
-  border: 1px solid rgba(255,255,255,.15);
+  border: 1px solid rgba(255,255,255,.12);
 }
 
-.axv-banner-title {
-  font-size: 15px;
-  font-weight: 900;
-  line-height: 1.1;
+#axv-arcana-banner > .axv-banner-card .axv-banner-title,
+#axv-arcana-banner > .axv-banner-card .axv-banner-sub,
+#axv-arcana-banner > .axv-banner-card .axv-banner-mode {
+  display: none !important;
 }
-
-.axv-banner-sub {
-  font-size: 12px;
-  opacity: 0.92;
-  margin-top: 2px;
-}
-
-.axv-banner-mode {
-  display: inline-block;
-  margin-top: 6px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: rgba(255,255,255,.12);
-  font-size: 11px;
-  font-weight: 800;
-}
-
 /* ---------- Suivi MJ ---------- */
 .axv-possession-table {
   width: 100%;

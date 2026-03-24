@@ -248,9 +248,21 @@ export class ArcanaManager {
 
   static init() {
     Hooks.on("getSceneControlButtons", controls => ArcanaManager.#injectSceneControl(controls));
-    Hooks.on("createItem", (item) => { if (item?.type === "atoutArcane" || item?.parent?.documentName === "Actor") { ArcanaManager.syncPassiveActorBonuses(item.parent); ArcanaManager.renderPublicBanner(); } });
-    Hooks.on("updateItem", (item) => { if (item?.type === "atoutArcane" || item?.parent?.documentName === "Actor") { ArcanaManager.syncPassiveActorBonuses(item.parent); ArcanaManager.renderPublicBanner(); } });
-    Hooks.on("deleteItem", (item) => { if (item?.type === "atoutArcane" || item?.parent?.documentName === "Actor") { ArcanaManager.syncPassiveActorBonuses(item.parent); ArcanaManager.renderPublicBanner(); } });
+    Hooks.on("createItem", (item) => {
+      if (item?.type !== "atoutArcane" || !(item?.actor ?? item?.parent)) return;
+      ArcanaManager.syncPassiveActorBonuses(item);
+      ArcanaManager.refreshUIForActor(item?.actor ?? item?.parent ?? null);
+    });
+    Hooks.on("updateItem", (item) => {
+      if (item?.type !== "atoutArcane" || !(item?.actor ?? item?.parent)) return;
+      ArcanaManager.syncPassiveActorBonuses(item);
+      ArcanaManager.refreshUIForActor(item?.actor ?? item?.parent ?? null);
+    });
+    Hooks.on("deleteItem", (item) => {
+      if (item?.type !== "atoutArcane" || !(item?.actor ?? item?.parent)) return;
+      ArcanaManager.syncPassiveActorBonuses(item);
+      ArcanaManager.refreshUIForActor(item?.actor ?? item?.parent ?? null);
+    });
     Hooks.on("createActor", () => ArcanaManager.renderPublicBanner());
     Hooks.on("updateActor", () => ArcanaManager.renderPublicBanner());
     Hooks.on("canvasReady", () => ArcanaManager.renderPublicBanner());
@@ -258,6 +270,7 @@ export class ArcanaManager {
     Hooks.on("renderSidebarTab", () => setTimeout(() => ArcanaManager.renderPublicBanner(), 0));
     Hooks.on("renderChatMessageHTML", (message, html) => ArcanaManager.#bindChatButtons(message, html));
     Hooks.on("renderChatMessage", (message, html) => ArcanaManager.#bindChatButtons(message, html));
+    ArcanaManager.#bindGlobalChatDelegation();
   }
 
   static async ready() {
@@ -394,8 +407,13 @@ export class ArcanaManager {
     return false;
   }
 
-  static async syncPassiveActorBonuses(actor) {
+  static async syncPassiveActorBonuses(source) {
+    const actor = source?.documentName === "Actor"
+      ? source
+      : (source?.actor ?? source?.parent ?? null);
+    if (!actor) return;
     if (!actor?.isOwner && !game.user?.isGM) return;
+
     const previousSum = Number(actor.getFlag?.("arcane15", "arcaneAppliedSommeBonus") ?? 0);
     const nextSum = actor.items.filter(i => i.type === "atoutArcane" && i.system?.active && i.system?.arcaneId === "soleil").length * 2;
     const updates = {};
@@ -409,6 +427,11 @@ export class ArcanaManager {
     const previousDmg = Number(actor.getFlag?.("arcane15", "arcaneDamageBonus") ?? 0);
     const nextDmg = actor.items.filter(i => i.type === "atoutArcane" && i.system?.active && i.system?.arcaneId === "sans-nom").length * 2;
     if (previousDmg !== nextDmg) await actor.setFlag("arcane15", "arcaneDamageBonus", nextDmg);
+  }
+
+  static refreshUIForActor(_source) {
+    queueMicrotask(() => ArcanaManager.renderPublicBanner());
+    setTimeout(() => ArcanaManager.renderPublicBanner(), 25);
   }
 
   static bindSheet(sheet) {
@@ -427,22 +450,22 @@ export class ArcanaManager {
     root.querySelectorAll(".axv-arcana-activate").forEach(btn => {
       if (btn.dataset.axvBound) return;
       btn.dataset.axvBound = "1";
-      btn.addEventListener("click", ev => ArcanaManager.requestActivation(sheet.document, ev.currentTarget.dataset.itemId));
+      btn.addEventListener("click", ev => { ev.preventDefault(); ev.stopPropagation(); ArcanaManager.requestActivation(sheet.document, ev.currentTarget.dataset.itemId); });
     });
     root.querySelectorAll(".axv-arcana-deactivate").forEach(btn => {
       if (btn.dataset.axvBound) return;
       btn.dataset.axvBound = "1";
-      btn.addEventListener("click", ev => ArcanaManager.deactivateArcane(sheet.document, ev.currentTarget.dataset.itemId));
+      btn.addEventListener("click", ev => { ev.preventDefault(); ev.stopPropagation(); ArcanaManager.deactivateArcane(sheet.document, ev.currentTarget.dataset.itemId); });
     });
     root.querySelectorAll(".axv-arcana-heroic").forEach(btn => {
       if (btn.dataset.axvBound) return;
       btn.dataset.axvBound = "1";
-      btn.addEventListener("click", ev => ArcanaManager.useHeroicEffect(sheet.document, ev.currentTarget.dataset.itemId));
+      btn.addEventListener("click", ev => { ev.preventDefault(); ev.stopPropagation(); ArcanaManager.useHeroicEffect(sheet.document, ev.currentTarget.dataset.itemId); });
     });
     root.querySelectorAll(".axv-arcana-remove").forEach(btn => {
       if (btn.dataset.axvBound) return;
       btn.dataset.axvBound = "1";
-      btn.addEventListener("click", ev => ArcanaManager.removeArcaneFromActor(sheet.document, ev.currentTarget.dataset.itemId));
+      btn.addEventListener("click", ev => { ev.preventDefault(); ev.stopPropagation(); ArcanaManager.removeArcaneFromActor(sheet.document, ev.currentTarget.dataset.itemId); });
     });
   }
 
@@ -605,6 +628,44 @@ export class ArcanaManager {
     await item.delete();
   }
 
+
+  static async #resolveActorAndItem(ref = {}) {
+    let actor = null;
+    let item = null;
+
+    const itemUuid = ref.itemUuid ?? null;
+    const actorUuid = ref.actorUuid ?? null;
+    const itemId = ref.itemId ?? null;
+    const actorId = ref.actorId ?? null;
+
+    if (itemUuid && typeof fromUuid === "function") {
+      try { item = await fromUuid(itemUuid); } catch (_) { item = null; }
+      actor = item?.actor ?? item?.parent ?? actor;
+    }
+
+    if (!actor && actorUuid && typeof fromUuid === "function") {
+      try { actor = await fromUuid(actorUuid); } catch (_) { actor = null; }
+    }
+
+    if (!actor && actorId) {
+      actor = game.actors?.get?.(actorId) ?? null;
+    }
+
+    if (!item && actor && itemId) {
+      item = actor.items?.get?.(itemId) ?? null;
+    }
+
+    if (!item && itemId) {
+      const worldItem = game.items?.get?.(itemId) ?? null;
+      if (worldItem && (worldItem.actor || worldItem.parent)) {
+        item = worldItem;
+        actor = item.actor ?? item.parent ?? actor;
+      }
+    }
+
+    return { actor: actor ?? null, item: item ?? null };
+  }
+
   static async requestActivation(actor, itemId) {
     const item = actor.items.get(itemId);
     if (!item) return;
@@ -619,26 +680,46 @@ export class ArcanaManager {
     if (!result) return;
     if (result.success) {
       await item.update({ "system.active": true });
-      await ArcanaManager.syncPassiveActorBonuses(actor);
-      await ArcanaManager.#postPublicArcanaMessage(actor, item, false, "activation réussie");
-      ArcanaManager.renderPublicBanner();
+      const refreshedActor = game.actors.get(actor.id) ?? actor;
+      const refreshedItem = refreshedActor.items.get(item.id) ?? item;
+      await ArcanaManager.syncPassiveActorBonuses(refreshedActor);
+      await ArcanaManager.#postPublicArcanaMessage(refreshedActor, refreshedItem, false, "activation réussie");
+      ArcanaManager.refreshUIForActor(refreshedActor);
       return;
     }
     await ArcanaManager.#postActivationFailureForGM(actor, item, result);
   }
 
-  static async confirmActivationByGM(actorId, itemId, messageId, approved) {
+  static async confirmActivationByGM(actorRef, itemRef, messageId, approved, actorUuid = null, itemUuid = null) {
     if (!game.user?.isGM) return;
-    const actor = game.actors.get(actorId);
-    const item = actor?.items?.get(itemId);
+
+    const refs = (typeof actorRef === "object" && actorRef)
+      ? actorRef
+      : { actorId: actorRef, itemId: itemRef, actorUuid, itemUuid };
+
+    const resolved = await ArcanaManager.#resolveActorAndItem(refs);
+    const actor = resolved.actor;
+    const item = resolved.item;
     if (!actor || !item) return;
+
     if (approved) {
       await item.update({ "system.active": true });
-      await ArcanaManager.syncPassiveActorBonuses(actor);
-      await ArcanaManager.#postPublicArcanaMessage(actor, item, false, "activation validée par le MJ (hors stress)");
-      ArcanaManager.renderPublicBanner();
+      const refreshed = await ArcanaManager.#resolveActorAndItem({
+        actorUuid: actor.uuid,
+        itemUuid: item.uuid,
+        actorId: actor.id,
+        itemId: item.id
+      });
+      const refreshedActor = refreshed.actor ?? actor;
+      const refreshedItem = refreshed.item ?? item;
+      await ArcanaManager.syncPassiveActorBonuses(refreshedActor);
+      await ArcanaManager.#postPublicArcanaMessage(refreshedActor, refreshedItem, false, "activation validée par le MJ (hors stress)");
+      ArcanaManager.refreshUIForActor(refreshedActor);
+      setTimeout(() => ArcanaManager.refreshUIForActor(refreshedActor), 75);
+      setTimeout(() => ArcanaManager.renderPublicBanner(), 75);
     }
-    const msg = game.messages.get(messageId);
+
+    const msg = messageId ? game.messages.get(messageId) : null;
     if (msg) {
       const status = approved ? "Activation validée par le MJ." : "Activation refusée par le MJ.";
       await msg.update({
@@ -648,12 +729,47 @@ export class ArcanaManager {
   }
 
   static async deactivateArcane(actor, itemId) {
-    const item = actor.items.get(itemId);
-    if (!item || !item.system?.active) return;
-    await item.update({ "system.active": false });
-    await ArcanaManager.syncPassiveActorBonuses(actor);
-    await ArcanaManager.#postPublicArcanaMessage(actor, item, false, "désactivation");
-    ArcanaManager.renderPublicBanner();
+    const refs = {
+      actorUuid: actor?.uuid ?? null,
+      actorId: actor?.id ?? null,
+      itemId
+    };
+
+    const resolved = await ArcanaManager.#resolveActorAndItem(refs);
+    const liveActor = resolved.actor ?? actor ?? null;
+    const item = resolved.item ?? liveActor?.items?.get?.(itemId) ?? actor?.items?.get?.(itemId) ?? null;
+    if (!liveActor || !item) return;
+    if (!item.system?.active) return;
+
+    // Retire immédiatement la carte du bandeau pour éviter tout état visuel figé
+    // pendant le cycle d'update Foundry.
+    ArcanaManager.#removeBannerCard(item, liveActor);
+
+    await item.update({ "system.active": false, "system.lastHeroicAt": 0 });
+
+    const refreshed = await ArcanaManager.#resolveActorAndItem({
+      actorUuid: liveActor?.uuid ?? null,
+      actorId: liveActor?.id ?? null,
+      itemUuid: item?.uuid ?? null,
+      itemId: item?.id ?? itemId
+    });
+
+    const refreshedActor = refreshed.actor ?? liveActor;
+    const refreshedItem = refreshed.item ?? item;
+    await ArcanaManager.syncPassiveActorBonuses(refreshedActor);
+    await ArcanaManager.#postPublicArcanaMessage(refreshedActor, refreshedItem, false, "désactivation");
+    ArcanaManager.refreshUIForActor(refreshedActor);
+    queueMicrotask(() => ArcanaManager.renderPublicBanner());
+    setTimeout(() => ArcanaManager.renderPublicBanner(), 25);
+    setTimeout(() => ArcanaManager.renderPublicBanner(), 100);
+    setTimeout(() => {
+      const node = document.getElementById("axv-arcana-banner");
+      if (node && !node.querySelector(".axv-banner-card")) {
+        node.innerHTML = "";
+        node.hidden = true;
+        node.style.display = "none";
+      }
+    }, 120);
   }
 
   static async useHeroicEffect(actor, itemId) {
@@ -666,8 +782,10 @@ export class ArcanaManager {
 
     await actor.update({ "system.stats.destin": destin - cost });
     await item.update({ "system.lastHeroicAt": Date.now() });
-    await ArcanaManager.#postPublicArcanaMessage(actor, item, true, "effet héroïque");
-    ArcanaManager.renderPublicBanner();
+    const refreshedActor = game.actors.get(actor.id) ?? actor;
+    const refreshedItem = refreshedActor.items.get(item.id) ?? item;
+    await ArcanaManager.#postPublicArcanaMessage(refreshedActor, refreshedItem, true, "effet héroïque");
+    ArcanaManager.refreshUIForActor(refreshedActor);
     await ArcanaManager.#applyHeroicAutomation(actor, item);
 
     const possessionDiff = ArcanaManager.computePossessionDifficulty(actor);
@@ -687,7 +805,7 @@ export class ArcanaManager {
   }
 
   static countNearbyActiveArcana(actor, rangeMeters = 10) {
-    const activeItems = game.actors.flatMap(a => a.items.filter(i => i.type === "atoutArcane" && i.system?.active));
+    const activeItems = (game.actors?.contents ?? []).flatMap(a => a.items.filter(i => i.type === "atoutArcane" && i.system?.active));
     const sourceToken = actor.getActiveTokens?.(true, true)?.[0] ?? null;
     if (!sourceToken || !canvas?.scene) return activeItems.length;
     const rangePx = (rangeMeters / Number(canvas.scene.grid.distance || 1)) * Number(canvas.scene.grid.size || 100);
@@ -961,7 +1079,7 @@ export class ArcanaManager {
 
   static openPossessionTracker() {
     if (!game.user?.isGM) return;
-    const rows = game.actors.flatMap(actor => actor.items.filter(i => i.type === "atoutArcane").map(item => ({
+    const rows = (game.actors?.contents ?? []).flatMap(actor => actor.items.filter(i => i.type === "atoutArcane").map(item => ({
       actor: actor.name,
       arcane: item.name,
       sataniste: item.system?.sataniste || "",
@@ -981,32 +1099,99 @@ export class ArcanaManager {
     }).render({ force: true });
   }
 
+  static #collectBannerActors() {
+    const actors = [];
+    const seen = new Set();
+
+    const pushActor = (actor) => {
+      if (!actor) return;
+      const key = actor.id ?? actor.uuid ?? actor.name ?? foundry.utils.randomID();
+      if (seen.has(key)) return;
+      seen.add(key);
+      actors.push(actor);
+    };
+
+    // On privilégie d’abord les acteurs "live" du canvas pour éviter les doublons
+    // monde + token et pour refléter l’état réellement visible en scène.
+    for (const token of (canvas?.tokens?.placeables ?? [])) pushActor(token?.actor ?? null);
+    for (const actor of (game.actors?.contents ?? [])) pushActor(actor);
+    return actors;
+  }
+
+  static #removeBannerCard(item, actor = null) {
+    const node = document.getElementById("axv-arcana-banner");
+    if (!node) return;
+    const actorId = actor?.id ?? item?.actor?.id ?? "";
+    const arcaneId = item?.system?.arcaneId ?? "";
+    const candidates = [
+      item?.id ? `[data-item-id="${item.id}"]` : null,
+      actorId && item?.id ? `[data-actor-id="${actorId}"][data-item-id="${item.id}"]` : null,
+      actorId && arcaneId ? `[data-actor-id="${actorId}"][data-arcane-id="${arcaneId}"]` : null,
+      arcaneId ? `[data-arcane-id="${arcaneId}"]` : null
+    ].filter(Boolean);
+
+    for (const selector of candidates) {
+      for (const el of node.querySelectorAll(selector)) el.remove();
+    }
+
+    if (!node.querySelector('.axv-banner-card')) {
+      node.innerHTML = "";
+      node.hidden = true;
+      node.style.display = "none";
+    }
+  }
+
   static renderPublicBanner() {
     ArcanaManager.#ensureBannerNode();
     if (!ArcanaManager.#bannerNode) return;
-    const activeItems = game.actors.flatMap(actor =>
+
+    const seen = new Set();
+    const activeItems = ArcanaManager.#collectBannerActors().flatMap(actor =>
       actor.items
         .filter(i => i.type === "atoutArcane" && i.system?.active)
         .map(item => ({ actor, item, def: ARCANA_BY_ID.get(item.system?.arcaneId) || {} }))
-    );
+    ).filter(({ actor, item }) => {
+      // Dédoublonnage robuste : un même acteur ne doit afficher qu’une seule carte
+      // par item/arcane, même s’il existe à la fois comme acteur monde et acteur de token.
+      const key = `${actor.id ?? actor.name}:${item.id ?? item.system?.arcaneId ?? item.name}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
     if (!activeItems.length) {
       ArcanaManager.#bannerNode.innerHTML = "";
       ArcanaManager.#bannerNode.hidden = true;
+      ArcanaManager.#bannerNode.style.display = "none";
       return;
     }
 
     ArcanaManager.#bannerNode.hidden = false;
+    ArcanaManager.#bannerNode.style.display = "flex";
     ArcanaManager.#bannerNode.innerHTML = activeItems.map(({ actor, item, def }) => {
       const heroic = Number(item.system?.lastHeroicAt ?? 0) > (Date.now() - 6000);
       const img = item.img || def.img || "icons/svg/card-joker.svg";
+      const current = foundry.utils.escapeHTML(item.system?.currentEffect || def.currentEffect || "");
+      const heroicText = foundry.utils.escapeHTML(item.system?.heroicEffect || def.heroicEffect || "");
+      const title = foundry.utils.escapeHTML(item.name || def.name || "Arcane majeur");
+      const actorName = foundry.utils.escapeHTML(actor.name || "");
+      const mode = heroic ? "Effet héroïque" : "Effet courant actif";
       return `
-        <div class="axv-banner-card ${heroic ? "is-heroic" : ""}">
-          <img src="${img}" alt="${item.name}" />
+        <div class="axv-banner-card ${heroic ? "is-heroic" : ""}"
+             data-item-id="${item.id ?? ""}"
+             data-actor-id="${actor.id ?? ""}"
+             data-arcane-id="${item.system?.arcaneId ?? ""}"
+             title="${title} — ${actorName}
+${mode}
+
+Courant : ${current}
+
+Héroïque : ${heroicText}">
+          <img src="${img}" alt="${title}" />
           <div class="axv-banner-text">
-            <div class="axv-banner-title">${item.name}</div>
-            <div class="axv-banner-sub">${actor.name}</div>
-            <div class="axv-banner-mode">${heroic ? "Effet héroïque" : "Effet courant actif"}</div>
+            <div class="axv-banner-title">${title}</div>
+            <div class="axv-banner-sub">${actorName}</div>
+            <div class="axv-banner-mode">${mode}</div>
           </div>
         </div>`;
     }).join("");
@@ -1026,18 +1211,53 @@ export class ArcanaManager {
 
   static #injectSceneControl(controls) {
     if (!game.user?.isGM) return;
-    const tokenControls = Array.isArray(controls) ? (controls.find(c => c.name === "token") ?? controls[0]) : (controls?.token ?? Object.values(controls || {})[0]);
+    const tokenControls = Array.isArray(controls)
+      ? (controls.find(c => c.name === "token") ?? controls.find(c => c.name === "tokens") ?? controls[0])
+      : (controls?.tokens ?? controls?.token ?? Object.values(controls || {})[0]);
     if (!tokenControls) return;
-    tokenControls.tools ??= [];
-    if (tokenControls.tools.some(t => t.name === "axv-possession")) return;
-    tokenControls.tools.push({
+
+    const tool = {
       name: "axv-possession",
       title: "Suivi de la possession",
       icon: "fas fa-book-skull",
       button: true,
       visible: true,
       onClick: () => ArcanaManager.openPossessionTracker()
-    });
+    };
+
+    if (Array.isArray(tokenControls.tools)) {
+      if (tokenControls.tools.some(t => t?.name === "axv-possession")) return;
+      tokenControls.tools.push(tool);
+      return;
+    }
+
+    if (tokenControls.tools && typeof tokenControls.tools === "object") {
+      if (tokenControls.tools["axv-possession"]) return;
+      tokenControls.tools["axv-possession"] = tool;
+      return;
+    }
+
+    tokenControls.tools = [tool];
+  }
+
+  static #bindGlobalChatDelegation() {
+    const root = document;
+    if (root.body?.dataset?.axvArcanaChatDelegation === "1") return;
+    if (root.body) root.body.dataset.axvArcanaChatDelegation = "1";
+    root.addEventListener("click", async ev => {
+      const target = ev.target?.closest?.("[data-axv-activation-approve], [data-axv-activation-refuse]");
+      if (!target) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      const actorId = target.dataset.actorId;
+      const itemId = target.dataset.itemId;
+      const actorUuid = target.dataset.actorUuid ?? null;
+      const itemUuid = target.dataset.itemUuid ?? null;
+      const approved = target.hasAttribute("data-axv-activation-approve");
+      const messageEl = target.closest(".chat-message");
+      const messageId = messageEl?.dataset?.messageId ?? messageEl?.getAttribute?.("data-message-id") ?? null;
+      await ArcanaManager.confirmActivationByGM({ actorId, itemId, actorUuid, itemUuid }, null, messageId, approved);
+    }, true);
   }
 
   static #bindChatButtons(message, html) {
@@ -1048,11 +1268,15 @@ export class ArcanaManager {
       btn.dataset.axvBound = "1";
       btn.addEventListener("click", async ev => {
         ev.preventDefault();
+        ev.stopPropagation();
         const target = ev.currentTarget;
         const actorId = target.dataset.actorId;
         const itemId = target.dataset.itemId;
+        const actorUuid = target.dataset.actorUuid ?? null;
+        const itemUuid = target.dataset.itemUuid ?? null;
         const approved = target.hasAttribute("data-axv-activation-approve");
-        await ArcanaManager.confirmActivationByGM(actorId, itemId, message.id, approved);
+        const messageId = message?.id ?? target.closest?.(".chat-message")?.dataset?.messageId ?? null;
+        await ArcanaManager.confirmActivationByGM({ actorId, itemId, actorUuid, itemUuid }, null, messageId, approved);
       });
     });
     root.querySelectorAll("[data-axv-arcana-substitute]").forEach(btn => {
@@ -1083,8 +1307,8 @@ export class ArcanaManager {
           <div style="margin-top:6px;">Total : <strong>${result.finalTotal}</strong> / difficulté <strong>${result.difficulty}</strong></div>
           <div style="margin-top:6px;">Hors stress, le MJ peut valider l’activation malgré l’échec.</div>
           <div class="axv-arcana-gm-actions">
-            <button type="button" data-axv-activation-approve data-actor-id="${actor.id}" data-item-id="${item.id}">Valider</button>
-            <button type="button" data-axv-activation-refuse data-actor-id="${actor.id}" data-item-id="${item.id}">Refuser</button>
+            <button type="button" data-axv-activation-approve data-actor-id="${actor.id}" data-item-id="${item.id}" data-actor-uuid="${actor.uuid}" data-item-uuid="${item.uuid}">Valider</button>
+            <button type="button" data-axv-activation-refuse data-actor-id="${actor.id}" data-item-id="${item.id}" data-actor-uuid="${actor.uuid}" data-item-uuid="${item.uuid}">Refuser</button>
           </div>
         </div>`
     });
