@@ -215,15 +215,15 @@
    CONTENU DES ONGLETS
    ============================================================ */
 
-.sheet-body {
+.arcane15.sheet .sheet-body {
     flex: 1;
     overflow-y: auto;
     position: relative;
     padding-right: 5px;
 }
 
-.tab { display: none; }
-.tab.active { display: block !important; }
+.arcane15.sheet .sheet-body > .tab { display: none; }
+.arcane15.sheet .sheet-body > .tab.active { display: block !important; }
 
 /* ============================================================
    COMPÉTENCES
@@ -553,18 +553,18 @@
    AXV Chat cards sizing only
    Keep Foundry native chat scrolling/layout
    ============================ */
-.chat-message,
-.chat-message .message-content {
+#sidebar #chat-log .chat-message:has(.axv-chat-card),
+#sidebar #chat-log .chat-message:has(.axv-chat-card) .message-content {
   min-width: 0 !important;
   max-width: 100% !important;
   box-sizing: border-box !important;
 }
 
-.chat-message .message-content {
+#sidebar #chat-log .chat-message:has(.axv-chat-card) .message-content {
   overflow-x: hidden !important;
 }
 
-.chat-message .axv-chat-card {
+#sidebar #chat-log .chat-message .axv-chat-card {
   display: block !important;
   width: 100% !important;
   max-width: 100% !important;
@@ -573,11 +573,11 @@
   overflow: hidden !important;
 }
 
-.chat-message .axv-chat-card * {
+#sidebar #chat-log .chat-message .axv-chat-card * {
   box-sizing: border-box !important;
 }
 
-.chat-message .axv-chat-card img {
+#sidebar #chat-log .chat-message .axv-chat-card img {
   max-width: 100% !important;
   height: auto !important;
 }
