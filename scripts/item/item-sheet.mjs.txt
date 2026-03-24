@@ -1,0 +1,37 @@
+const { HandlebarsApplicationMixin } = foundry.applications.api;
+const { ItemSheetV2 } = foundry.applications.sheets;
+
+export class Arcane15ItemSheet extends HandlebarsApplicationMixin(ItemSheetV2) {
+  static DEFAULT_OPTIONS = {
+    tag: "form",
+    classes: ["arcane15", "sheet", "item", "axv-arcana-item-sheet"],
+    position: { width: 760, height: 860 },
+    window: { resizable: true },
+    form: { submitOnChange: true, closeOnSubmit: false }
+  };
+
+  static PARTS = {
+    sheet: { template: "systems/arcane15/templates/item-atout-arcane-sheet.hbs" }
+  };
+
+  async _prepareContext(_options) {
+    const item = this.document;
+    const enrichOptions = {
+      secrets: true,
+      relativeTo: item,
+      rollData: item.getRollData?.() ?? {}
+    };
+
+    return {
+      item,
+      system: item.system,
+      source: item.toObject(),
+      enriched: {
+        currentEffect: await TextEditor.enrichHTML(item.system?.currentEffect ?? "", enrichOptions),
+        heroicEffect: await TextEditor.enrichHTML(item.system?.heroicEffect ?? "", enrichOptions),
+        notesMj: await TextEditor.enrichHTML(item.system?.notesMj ?? "", enrichOptions),
+        lastEffect: await TextEditor.enrichHTML(item.system?.possession?.lastEffect ?? "", enrichOptions)
+      }
+    };
+  }
+}

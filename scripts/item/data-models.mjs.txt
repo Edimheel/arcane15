@@ -1,0 +1,31 @@
+/**
+ * Data model des atouts d'arcanes majeurs.
+ */
+export class AtoutArcaneData extends foundry.abstract.TypeDataModel {
+  static defineSchema() {
+    const fields = foundry.data.fields;
+    return {
+      arcaneId: new fields.StringField({ initial: "" }),
+      sataniste: new fields.StringField({ initial: "" }),
+      linked: new fields.BooleanField({ initial: true }),
+      active: new fields.BooleanField({ initial: false }),
+      currentEffect: new fields.HTMLField({ initial: "" }),
+      heroicEffect: new fields.HTMLField({ initial: "" }),
+      heroicCost: new fields.NumberField({ initial: 1, integer: true, min: 0 }),
+      activationDifficulty: new fields.NumberField({ initial: 12, integer: true, min: 0 }),
+      lastHeroicAt: new fields.NumberField({ initial: 0, integer: true, min: 0 }),
+      notesMj: new fields.HTMLField({ initial: "" }),
+      possession: new fields.SchemaField({
+        tier: new fields.NumberField({ initial: 0, integer: true, min: 0, max: 6 }),
+        lastChangeAt: new fields.NumberField({ initial: 0, integer: true, min: 0 }),
+        lastEffect: new fields.HTMLField({ initial: "" }),
+        tier1: new fields.HTMLField({ initial: "" }),
+        tier2: new fields.HTMLField({ initial: "" }),
+        tier3: new fields.HTMLField({ initial: "" }),
+        tier4: new fields.HTMLField({ initial: "" }),
+        tier5: new fields.HTMLField({ initial: "" }),
+        tier6: new fields.HTMLField({ initial: "" })
+      })
+    };
+  }
+}

@@ -1,0 +1,78 @@
+<section class="axv-arcana-item-sheet">
+  <header class="axv-item-header">
+    <img class="profile-img" src="{{item.img}}" data-edit="img" title="Image" alt="{{item.name}}" />
+    <div class="axv-item-head-fields">
+      <div class="form-group">
+        <label>Nom</label>
+        <input type="text" name="name" value="{{item.name}}" />
+      </div>
+      <div class="form-grid two-col">
+        <div class="form-group">
+          <label>Identifiant arcane</label>
+          <input type="text" name="system.arcaneId" value="{{system.arcaneId}}" />
+        </div>
+        <div class="form-group">
+          <label>Sataniste</label>
+          <input type="text" name="system.sataniste" value="{{system.sataniste}}" />
+        </div>
+        <div class="form-group checkbox-inline">
+          <label>Liaison</label>
+          <input type="checkbox" name="system.linked" {{checked system.linked}} />
+        </div>
+        <div class="form-group checkbox-inline">
+          <label>Actif</label>
+          <input type="checkbox" name="system.active" {{checked system.active}} />
+        </div>
+        <div class="form-group">
+          <label>Coût héroïque</label>
+          <input type="number" name="system.heroicCost" value="{{system.heroicCost}}" min="0" step="1" />
+        </div>
+        <div class="form-group">
+          <label>Difficulté activation</label>
+          <input type="number" name="system.activationDifficulty" value="{{system.activationDifficulty}}" min="0" step="1" />
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="form-group stacked">
+    <label>Effet courant</label>
+    <textarea name="system.currentEffect">{{system.currentEffect}}</textarea>
+  </div>
+
+  <div class="form-group stacked">
+    <label>Effet héroïque</label>
+    <textarea name="system.heroicEffect">{{system.heroicEffect}}</textarea>
+  </div>
+
+  <div class="form-group stacked">
+    <label>Notes MJ</label>
+    <textarea name="system.notesMj">{{system.notesMj}}</textarea>
+  </div>
+
+  <section class="axv-possession-editor">
+    <h3>Possession</h3>
+    <div class="form-grid two-col">
+      <div class="form-group">
+        <label>Palier actuel</label>
+        <input type="number" name="system.possession.tier" value="{{system.possession.tier}}" min="0" max="6" step="1" />
+      </div>
+      <div class="form-group">
+        <label>Dernier horodatage</label>
+        <input type="number" name="system.possession.lastChangeAt" value="{{system.possession.lastChangeAt}}" min="0" step="1" />
+      </div>
+    </div>
+    <div class="form-group stacked">
+      <label>Dernier effet déclenché</label>
+      <textarea name="system.possession.lastEffect">{{system.possession.lastEffect}}</textarea>
+    </div>
+    <div class="form-grid two-col">
+      <div class="form-group stacked"><label>Palier 1</label><textarea name="system.possession.tier1">{{system.possession.tier1}}</textarea></div>
+      <div class="form-group stacked"><label>Palier 2</label><textarea name="system.possession.tier2">{{system.possession.tier2}}</textarea></div>
+      <div class="form-group stacked"><label>Palier 3</label><textarea name="system.possession.tier3">{{system.possession.tier3}}</textarea></div>
+      <div class="form-group stacked"><label>Palier 4</label><textarea name="system.possession.tier4">{{system.possession.tier4}}</textarea></div>
+      <div class="form-group stacked"><label>Palier 5</label><textarea name="system.possession.tier5">{{system.possession.tier5}}</textarea></div>
+      <div class="form-group stacked"><label>Palier 6</label><textarea name="system.possession.tier6">{{system.possession.tier6}}</textarea></div>
+    </div>
+  </section>
+</section>

@@ -1,0 +1,702 @@
+import { Arcane15ActorSheet } from "../actor/actor-sheet.mjs";
+import { CardManager } from "../actor/card-manager.mjs";
+
+const { DialogV2, HandlebarsApplicationMixin, ApplicationV2 } = foundry.applications.api;
+
+const AXV_ARCANA_ITEM_TYPE = "atoutArcane";
+const AXV_ARCANA_BANNER_ID = "axv-arcana-banner-root";
+const AXV_ARCANA_CHAT_FLAG = "arcana15.arcanaChatAction";
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatDateTime(timestamp) {
+  if (!timestamp) return "—";
+  try {
+    return new Date(Number(timestamp)).toLocaleString();
+  } catch {
+    return String(timestamp);
+  }
+}
+
+function getGMRecipients() {
+  return game.users?.filter((u) => u.isGM)?.map((u) => u.id) ?? [];
+}
+
+class AXVPossessionTrackerApp extends HandlebarsApplicationMixin(ApplicationV2) {
+  static DEFAULT_OPTIONS = {
+    id: "axv-possession-tracker",
+    classes: ["arcane15", "axv-possession-tracker"],
+    tag: "section",
+    position: { width: 900, height: 680 },
+    window: { title: "Suivi de Possession", resizable: true }
+  };
+
+  static PARTS = {
+    sheet: { template: "systems/arcane15/templates/axv-possession-tracker.hbs" }
+  };
+
+  async _prepareContext() {
+    return {
+      rows: AXVArcanaManager.collectPossessionRows()
+    };
+  }
+}
+
+export class AXVArcanaManager {
+  static trackerApp = null;
+  static _patched = false;
+  static _chatHookBound = false;
+
+  static init() {
+    if (this._patched) return;
+    this._patched = true;
+    this.#patchActorSheet();
+    this.#registerHooks();
+  }
+
+  static ready() {
+    this.ensureBannerRoot();
+    this.renderBanner();
+  }
+
+  static getActorArcanaItems(actor) {
+    return (actor?.items?.contents ?? [])
+      .filter((item) => item?.type === AXV_ARCANA_ITEM_TYPE)
+      .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), "fr", { sensitivity: "base" }));
+  }
+
+  static getActorArcanaViewData(actor) {
+    return this.getActorArcanaItems(actor).map((item) => {
+      const system = item.system ?? {};
+      return {
+        id: item.id,
+        uuid: item.uuid,
+        name: item.name,
+        img: item.img || "icons/svg/card-joker.svg",
+        linked: !!system.linked,
+        active: !!system.active,
+        sataniste: system.sataniste || "",
+        currentEffect: system.currentEffect || "",
+        heroicEffect: system.heroicEffect || "",
+        heroicCost: Number(system.heroicCost ?? 1),
+        possessionTier: Number(system.possession?.tier ?? 0),
+        lastChangeAt: Number(system.possession?.lastChangeAt ?? 0),
+        lastEffect: system.possession?.lastEffect || "",
+        lastHeroicAt: Number(system.lastHeroicAt ?? 0)
+      };
+    });
+  }
+
+  static async addArcaneToActor(actor, sourceItem) {
+    if (!actor || !sourceItem) return false;
+    if (sourceItem.type !== AXV_ARCANA_ITEM_TYPE) {
+      ui.notifications?.warn?.("Seuls les objets d’atout d’arcane majeur peuvent être déposés ici.");
+      return false;
+    }
+
+    const existing = this.getActorArcanaItems(actor);
+    const arcaneId = String(sourceItem.system?.arcaneId || sourceItem.name || "").trim();
+    if (existing.some((it) => String(it.system?.arcaneId || it.name || "").trim() === arcaneId)) {
+      ui.notifications?.warn?.("Cet arcane est déjà lié à cet acteur.");
+      return false;
+    }
+    if (existing.length >= 4) {
+      ui.notifications?.warn?.("Un acteur ne peut pas lier plus de 4 arcanes majeurs.");
+      return false;
+    }
+
+    const itemData = foundry.utils.deepClone(sourceItem.toObject());
+    delete itemData._id;
+    foundry.utils.setProperty(itemData, "system.linked", true);
+    foundry.utils.setProperty(itemData, "system.active", false);
+    foundry.utils.setProperty(itemData, "system.lastHeroicAt", 0);
+    await actor.createEmbeddedDocuments("Item", [itemData]);
+    return true;
+  }
+
+  static async removeArcaneFromActor(actor, itemId) {
+    const item = actor?.items?.get?.(itemId);
+    if (!item || item.type !== AXV_ARCANA_ITEM_TYPE) return false;
+    await actor.deleteEmbeddedDocuments("Item", [itemId]);
+    return true;
+  }
+
+  static async requestActivation(actor, itemId) {
+    const item = actor?.items?.get?.(itemId);
+    if (!item || item.type !== AXV_ARCANA_ITEM_TYPE) return;
+    if (item.system?.active) {
+      ui.notifications?.info?.("Cet arcane est déjà actif.");
+      return;
+    }
+    await this.#rollVolonteForArcane(actor, item, {
+      mode: "activation",
+      title: `Activation d'arcane — ${actor.name}`,
+      difficulty: Number(item.system?.activationDifficulty ?? 12),
+      chatLabel: "Activation d'arcane majeur"
+    });
+  }
+
+  static async deactivateArcane(actor, itemId) {
+    const item = actor?.items?.get?.(itemId);
+    if (!item || item.type !== AXV_ARCANA_ITEM_TYPE) return;
+    if (!item.system?.active) return;
+    await item.update({ "system.active": false });
+    await ChatMessage.create({
+      content: `<div class="axv-arcana-chat"><strong>${escapeHtml(actor.name)}</strong> désactive <strong>${escapeHtml(item.name)}</strong>.</div>`,
+      speaker: ChatMessage.getSpeaker({ actor })
+    });
+    this.renderBanner();
+  }
+
+  static async useHeroicEffect(actor, itemId) {
+    const item = actor?.items?.get?.(itemId);
+    if (!item || item.type !== AXV_ARCANA_ITEM_TYPE) return;
+    if (!item.system?.active) {
+      ui.notifications?.warn?.("L’arcane doit être actif avant d’utiliser son effet héroïque.");
+      return;
+    }
+    const currentDestin = Number(actor.system?.stats?.destin ?? 0);
+    const heroicCost = Number(item.system?.heroicCost ?? 1);
+    if (currentDestin < heroicCost) {
+      ui.notifications?.warn?.("Destin insuffisant pour déclencher l’effet héroïque.");
+      return;
+    }
+
+    await actor.update({ "system.stats.destin": currentDestin - heroicCost });
+    await item.update({ "system.lastHeroicAt": Date.now() });
+
+    await ChatMessage.create({
+      content: `
+        <div class="axv-arcana-chat axv-arcana-chat-heroic">
+          <div><strong>${escapeHtml(actor.name)}</strong> déclenche l’effet héroïque de <strong>${escapeHtml(item.name)}</strong>.</div>
+          <div>Coût : <strong>${heroicCost}</strong> Destin</div>
+          <div class="axv-arcana-chat-effect">${item.system?.heroicEffect ?? ""}</div>
+        </div>
+      `,
+      speaker: ChatMessage.getSpeaker({ actor })
+    });
+
+    this.renderBanner();
+    await this.runPossessionCheck(actor, item.id);
+  }
+
+  static async runPossessionCheck(actor, itemId) {
+    const item = actor?.items?.get?.(itemId);
+    if (!item || item.type !== AXV_ARCANA_ITEM_TYPE) return;
+    const activeNearby = this.countActiveArcanaNearby(actor);
+    const difficulty = 8 + (2 * activeNearby);
+    await this.#rollVolonteForArcane(actor, item, {
+      mode: "possession",
+      title: `Possession — ${actor.name}`,
+      difficulty,
+      chatLabel: "Test de Possession"
+    });
+  }
+
+  static countActiveArcanaNearby(actor) {
+    try {
+      const token = actor?.getActiveTokens?.(true, true)?.[0] ?? null;
+      if (!canvas?.ready || !token) {
+        return Math.max(1, this.getActorArcanaItems(actor).filter((it) => it.system?.active).length);
+      }
+      const sceneTokens = canvas.tokens?.placeables ?? [];
+      let count = 0;
+      for (const placeable of sceneTokens) {
+        const otherActor = placeable.actor;
+        if (!otherActor) continue;
+        const distancePx = Math.hypot(placeable.center.x - token.center.x, placeable.center.y - token.center.y);
+        const units = (distancePx / canvas.grid.size) * (canvas.scene?.grid?.distance ?? 1);
+        if (units > 10) continue;
+        count += this.getActorArcanaItems(otherActor).filter((it) => it.system?.active).length;
+      }
+      return Math.max(1, count);
+    } catch (err) {
+      console.warn("[AXV][ARCANA] countActiveArcanaNearby fallback", err);
+      return Math.max(1, this.getActorArcanaItems(actor).filter((it) => it.system?.active).length);
+    }
+  }
+
+  static ensureBannerRoot() {
+    let root = document.getElementById(AXV_ARCANA_BANNER_ID);
+    if (!root) {
+      root = document.createElement("div");
+      root.id = AXV_ARCANA_BANNER_ID;
+      document.body.appendChild(root);
+    }
+    return root;
+  }
+
+  static renderBanner() {
+    const root = this.ensureBannerRoot();
+    const active = [];
+    for (const actor of game.actors ?? []) {
+      for (const item of this.getActorArcanaItems(actor)) {
+        if (!item.system?.active) continue;
+        active.push({ actor, item });
+      }
+    }
+
+    if (!active.length) {
+      root.innerHTML = "";
+      root.hidden = true;
+      return;
+    }
+
+    const now = Date.now();
+    root.hidden = false;
+    root.innerHTML = `
+      <div class="axv-arcana-banner-strip">
+        ${active.map(({ actor, item }) => {
+          const heroic = (now - Number(item.system?.lastHeroicAt ?? 0)) < 7000;
+          return `
+            <article class="axv-arcana-banner-card${heroic ? " is-heroic" : ""}">
+              <img src="${escapeHtml(item.img || "icons/svg/card-joker.svg")}" alt="${escapeHtml(item.name)}" />
+              <div class="axv-arcana-banner-meta">
+                <div class="axv-arcana-banner-name">${escapeHtml(item.name)}</div>
+                <div class="axv-arcana-banner-owner">${escapeHtml(actor.name)}</div>
+                <div class="axv-arcana-banner-state">${heroic ? "Effet héroïque" : "Effet courant"}</div>
+              </div>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }
+
+  static async openPossessionTracker() {
+    if (!game.user?.isGM) return;
+    if (!this.trackerApp) this.trackerApp = new AXVPossessionTrackerApp();
+    await this.trackerApp.render({ force: true });
+  }
+
+  static collectPossessionRows() {
+    const rows = [];
+    for (const actor of game.actors ?? []) {
+      for (const item of this.getActorArcanaItems(actor)) {
+        rows.push({
+          actorName: actor.name,
+          actorImg: actor.img,
+          actorId: actor.id,
+          itemId: item.id,
+          arcaneName: item.name,
+          sataniste: item.system?.sataniste ?? "",
+          active: !!item.system?.active,
+          tier: Number(item.system?.possession?.tier ?? 0),
+          lastChangeAt: formatDateTime(item.system?.possession?.lastChangeAt ?? 0),
+          lastEffect: item.system?.possession?.lastEffect ?? ""
+        });
+      }
+    }
+    rows.sort((a, b) => a.actorName.localeCompare(b.actorName, "fr", { sensitivity: "base" }) || a.arcaneName.localeCompare(b.arcaneName, "fr", { sensitivity: "base" }));
+    return rows;
+  }
+
+  static async handleGMActivationDecision(message, action) {
+    if (!game.user?.isGM) return;
+    const payload = message?.getFlag?.("arcane15", AXV_ARCANA_CHAT_FLAG);
+    if (!payload || payload.mode !== "activation-failure") return;
+    const actor = game.actors?.get(payload.actorId);
+    const item = actor?.items?.get?.(payload.itemId);
+    if (!actor || !item) return;
+
+    if (action === "confirm") {
+      await item.update({ "system.active": true });
+      await ChatMessage.create({
+        whisper: getGMRecipients(),
+        content: `<div class="axv-arcana-gm-only"><strong>Activation validée par le MJ</strong> : ${escapeHtml(actor.name)} active ${escapeHtml(item.name)} hors stress.</div>`
+      });
+      this.renderBanner();
+    }
+
+    await message.update({
+      content: `<div class="axv-arcana-gm-only"><strong>${action === "confirm" ? "Activation validée" : "Activation refusée"}</strong><br>${escapeHtml(actor.name)} — ${escapeHtml(item.name)}</div>`
+    });
+  }
+
+  static #patchActorSheet() {
+    const originalPrepare = Arcane15ActorSheet.prototype._prepareContext;
+    Arcane15ActorSheet.prototype._prepareContext = async function patchedPrepareContext(options) {
+      const context = await originalPrepare.call(this, options);
+      context.axvArcanaItems = AXVArcanaManager.getActorArcanaViewData(this.document);
+      return context;
+    };
+
+    const originalRender = Arcane15ActorSheet.prototype._onRender;
+    Arcane15ActorSheet.prototype._onRender = function patchedOnRender(context, options) {
+      originalRender.call(this, context, options);
+      AXVArcanaManager.enhanceActorSheet(this, context);
+    };
+  }
+
+  static enhanceActorSheet(sheet, _context) {
+    const root = sheet?.element;
+    if (!root) return;
+    const descriptionTab = root.querySelector('.tab[data-tab="description"]');
+    if (!descriptionTab) return;
+
+    const atoutsHeading = Array.from(descriptionTab.querySelectorAll("h2.comp-title")).find((el) => el.textContent?.trim?.() === "Atouts");
+    if (!atoutsHeading) return;
+    const atoutsBox = atoutsHeading.nextElementSibling;
+    if (!atoutsBox) return;
+
+    let panel = descriptionTab.querySelector(".axv-arcana-panel");
+    if (!panel) {
+      panel = document.createElement("section");
+      panel.className = "axv-arcana-panel";
+      atoutsHeading.replaceWith(panel);
+      atoutsBox.remove();
+    }
+
+    panel.innerHTML = this.#renderArcanaPanelHtml(sheet.document);
+    this.#bindArcanaPanel(sheet, panel);
+  }
+
+  static #renderArcanaPanelHtml(actor) {
+    const items = this.getActorArcanaViewData(actor);
+    const canEdit = actor.isOwner || game.user?.isGM;
+    const cardsHtml = items.length ? items.map((item) => `
+      <article class="axv-arcana-item${item.active ? " is-active" : ""}" data-item-id="${item.id}">
+        <div class="axv-arcana-item-header">
+          <img src="${escapeHtml(item.img)}" alt="${escapeHtml(item.name)}" />
+          <div>
+            <div class="axv-arcana-item-title">${escapeHtml(item.name)}</div>
+            <div class="axv-arcana-item-sub">${item.active ? "Actif" : "Lié"}${item.sataniste ? ` • ${escapeHtml(item.sataniste)}` : ""}</div>
+          </div>
+        </div>
+        <div class="axv-arcana-item-body">
+          <div class="axv-arcana-effect"><strong>Effet courant</strong><div>${item.currentEffect || "<em>Non renseigné</em>"}</div></div>
+          <div class="axv-arcana-effect"><strong>Effet héroïque</strong><div>${item.heroicEffect || "<em>Non renseigné</em>"}</div></div>
+          <div class="axv-arcana-meta">Coût héroïque : <strong>${item.heroicCost}</strong> Destin</div>
+          <div class="axv-arcana-meta">Palier de possession : <strong>${item.possessionTier}</strong></div>
+        </div>
+        ${canEdit ? `
+          <div class="axv-arcana-actions">
+            <button type="button" class="axv-arcana-action" data-action="activate" ${item.active ? "disabled" : ""}>Activer</button>
+            <button type="button" class="axv-arcana-action" data-action="heroic" ${item.active ? "" : "disabled"}>Effet héroïque</button>
+            <button type="button" class="axv-arcana-action" data-action="deactivate" ${item.active ? "" : "disabled"}>Désactiver</button>
+            <button type="button" class="axv-arcana-action is-danger" data-action="remove">Retirer</button>
+          </div>
+        ` : ""}
+      </article>
+    `).join("") : `<div class="axv-arcana-empty">Dépose ici un objet <strong>Atout d’arcane</strong>.</div>`;
+
+    return `
+      <h2 class="comp-title">Atouts d’arcane majeur</h2>
+      <div class="axv-arcana-dropzone" data-dropzone="arcana">
+        <div class="axv-arcana-drop-hint">Glisse-dépose un objet Atout d’arcane majeur sur cette zone.</div>
+        <div class="axv-arcana-list">${cardsHtml}</div>
+      </div>
+    `;
+  }
+
+  static #bindArcanaPanel(sheet, panel) {
+    if (!panel.dataset.axvArcanaBound) {
+      panel.dataset.axvArcanaBound = "1";
+
+      panel.addEventListener("dragover", (ev) => {
+        ev.preventDefault();
+        panel.classList.add("is-dragover");
+      });
+      panel.addEventListener("dragleave", () => panel.classList.remove("is-dragover"));
+      panel.addEventListener("drop", async (ev) => {
+        ev.preventDefault();
+        panel.classList.remove("is-dragover");
+        await AXVArcanaManager.#handleDropOnActorSheet(sheet, ev);
+      });
+
+      panel.addEventListener("click", async (ev) => {
+        const btn = ev.target?.closest?.("button.axv-arcana-action[data-action]");
+        if (!btn) return;
+        ev.preventDefault();
+        const action = btn.dataset.action;
+        const itemId = btn.closest?.("[data-item-id]")?.dataset?.itemId;
+        if (!itemId) return;
+        switch (action) {
+          case "activate":
+            return AXVArcanaManager.requestActivation(sheet.document, itemId);
+          case "heroic":
+            return AXVArcanaManager.useHeroicEffect(sheet.document, itemId);
+          case "deactivate":
+            return AXVArcanaManager.deactivateArcane(sheet.document, itemId);
+          case "remove":
+            return AXVArcanaManager.removeArcaneFromActor(sheet.document, itemId);
+        }
+      });
+    }
+  }
+
+  static async #handleDropOnActorSheet(sheet, event) {
+    try {
+      if (!(sheet.document?.isOwner || game.user?.isGM)) return;
+      const data = TextEditor.getDragEventData(event);
+      if (!data) return;
+      let item = null;
+      if (data.uuid) {
+        item = await fromUuid(data.uuid);
+      } else if (data.type === "Item" && data.data) {
+        item = new Item.implementation(data.data);
+      }
+      if (!item) return;
+      await this.addArcaneToActor(sheet.document, item);
+    } catch (err) {
+      console.error("[AXV][ARCANA] drop failed", err);
+      ui.notifications?.error?.("Impossible d’ajouter cet atout à l’acteur.");
+    }
+  }
+
+  static async #rollVolonteForArcane(actor, item, { mode, title, difficulty, chatLabel }) {
+    CardManager.ensureSocket();
+    let handId = actor.getFlag("arcane15", "hand");
+    if (!handId || !game.cards.get(handId)) {
+      await CardManager.initActorDecks(actor);
+      handId = actor.getFlag("arcane15", "hand");
+    }
+
+    const hand = game.cards.get(handId);
+    if (!hand) {
+      ui.notifications?.error?.("Main introuvable pour ce personnage.");
+      return;
+    }
+
+    const skillData = actor.system?.competences?.volonte;
+    const baseSkillValue = Number(skillData?.total ?? skillData?.val ?? 0);
+    const malEnPointMod = actor?.getFlag?.("arcane15", "malEnPoint") ? -1 : 0;
+    const skillValue = baseSkillValue + malEnPointMod;
+
+    const cards = hand.cards.contents.slice().sort((a, b) => {
+      const aj = CardManager._isJoker(a);
+      const bj = CardManager._isJoker(b);
+      if (aj && !bj) return -1;
+      if (!aj && bj) return 1;
+      return Number(a.flags.arcane15?.value ?? 0) - Number(b.flags.arcane15?.value ?? 0);
+    });
+
+    const dialogId = `axv-arcana-roll-${Date.now()}`;
+    const cardsHtml = cards.map((c) => {
+      const img = CardManager._getCardImg(c) || c.img || "icons/svg/hazard.svg";
+      const name = CardManager._getCardName(c) || c.name || "Carte";
+      const v = Number(c.flags.arcane15?.value ?? 0);
+      const isJoker = CardManager._isJoker(c);
+      return `
+        <button class="axv-card" data-card-id="${c.id}" type="button" title="Jouer ${escapeHtml(name)}">
+          <div class="axv-card-frame">
+            <img src="${escapeHtml(img)}" alt="${escapeHtml(name)}" />
+            <div class="axv-card-caption">${escapeHtml(name)}</div>
+            <div class="axv-card-badge">${isJoker ? "JOKER" : `+${v}`}</div>
+          </div>
+        </button>
+      `;
+    }).join("");
+
+    const content = `
+      <style>
+        #${dialogId} .axv-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px; padding:4px; max-height:560px; overflow:auto; }
+        #${dialogId} .axv-card { all:unset; cursor:pointer; }
+        #${dialogId} .axv-card-frame { border-radius:16px; overflow:hidden; border:1px solid rgba(0,0,0,.35); box-shadow:0 10px 24px rgba(0,0,0,.18); background:#111; }
+        #${dialogId} .axv-card img { display:block; width:100%; aspect-ratio:2/3; object-fit:cover; }
+        #${dialogId} .axv-card-caption, #${dialogId} .axv-card-badge { color:#fff; padding:6px 10px; font-weight:700; }
+        #${dialogId} .axv-card-badge { background:rgba(255,255,255,.08); }
+        #${dialogId} .axv-top { display:flex; justify-content:space-between; gap:12px; align-items:flex-end; padding:10px 12px; border:1px solid rgba(0,0,0,.18); border-radius:14px; background:#fff; }
+        #${dialogId} .axv-sub { font-size:12px; opacity:.85; margin-top:4px; }
+        #${dialogId} .axv-badge { font-weight:900; padding:6px 10px; border-radius:999px; border:1px solid rgba(0,0,0,.18); background:rgba(0,0,0,.04); white-space:nowrap; }
+      </style>
+      <div id="${dialogId}">
+        <div class="axv-top">
+          <div>
+            <div style="font-weight:900;font-size:16px;">${escapeHtml(title)} — ${escapeHtml(item.name)}</div>
+            <div class="axv-sub">Choisis une carte pour un test de Volonté. Difficulté fixe : <strong>${difficulty}</strong>.</div>
+          </div>
+          <div class="axv-badge">Volonté : ${skillValue}${malEnPointMod ? ` <span style="opacity:.85;">(${baseSkillValue} ${malEnPointMod})</span>` : ""}</div>
+        </div>
+        <div style="margin-top:10px; font-size:12px; opacity:.85;">Main : ${cards.length} carte(s)</div>
+        <div class="axv-grid">${cardsHtml}</div>
+      </div>
+    `;
+
+    const dlg = new DialogV2({
+      window: { title },
+      content,
+      rejectClose: false,
+      buttons: [{ action: "close", label: "Fermer", default: true }]
+    });
+
+    await dlg.render({ force: true });
+    const root = dlg.element?.querySelector?.(`#${dialogId}`);
+    if (!root) return;
+
+    let busy = false;
+    root.addEventListener("click", async (ev) => {
+      try {
+        const btn = ev.target?.closest?.("button.axv-card[data-card-id]");
+        if (!btn || busy) return;
+        busy = true;
+        const cardId = btn.dataset.cardId;
+        const card = hand.cards.get(cardId);
+        if (!card) {
+          ui.notifications?.error?.("Carte introuvable.");
+          busy = false;
+          return;
+        }
+
+        const cardValue = Number(card.flags?.arcane15?.value ?? 0);
+        const cardName = CardManager._getCardName(card) || card.name || "Carte";
+        const cardImg = CardManager._getCardImg(card) || card.img || "icons/svg/hazard.svg";
+        const finalTotal = skillValue + cardValue;
+        const success = finalTotal >= difficulty;
+
+        await ChatMessage.create({
+          content: `
+            <div class="axv-chat-card" style="width:100%;max-width:100%;box-sizing:border-box;border:1px solid rgba(0,0,0,.2);border-radius:14px;overflow:hidden;background:#fff;">
+              <div style="padding:10px 12px;border-bottom:1px solid rgba(0,0,0,.12);font-weight:900;">${escapeHtml(actor.name)} — ${escapeHtml(chatLabel)} — ${escapeHtml(item.name)}</div>
+              <div style="display:flex;gap:12px;padding:12px;min-width:0;box-sizing:border-box;">
+                <img src="${escapeHtml(cardImg)}" style="width:84px;height:126px;object-fit:cover;border-radius:10px;border:1px solid rgba(0,0,0,.25);flex:0 0 auto;" />
+                <div style="flex:1;min-width:0;overflow-wrap:anywhere;word-break:break-word;">
+                  <div style="font-weight:900;font-size:14px;margin-bottom:6px;">${escapeHtml(cardName)}</div>
+                  <div>Volonté : <strong>${skillValue}</strong></div>
+                  <div>Carte : <strong>+${cardValue}</strong></div>
+                  <div>Difficulté : <strong>${difficulty}</strong></div>
+                  <div style="margin-top:10px;font-weight:900;font-size:18px;">TOTAL : ${finalTotal}</div>
+                  <div style="margin-top:6px;font-weight:900;font-size:16px;">${success ? "RÉUSSITE" : "ÉCHEC"}</div>
+                </div>
+              </div>
+            </div>
+          `,
+          speaker: ChatMessage.getSpeaker({ actor })
+        });
+
+        await CardManager.cycleCard(actor, card);
+
+        if (mode === "activation") {
+          if (success) {
+            await item.update({ "system.active": true });
+            this.renderBanner();
+          } else {
+            await this.#sendGMActivationOverride(actor, item, finalTotal, difficulty);
+          }
+        } else if (mode === "possession") {
+          if (!success) {
+            await this.#increasePossessionTier(actor, item, difficulty);
+          }
+        }
+
+        try { dlg.close(); } catch (_) {}
+      } catch (err) {
+        console.error("[AXV][ARCANA] roll failed", err);
+        ui.notifications?.error?.("Erreur lors du test d’arcane (voir console).");
+        busy = false;
+      }
+    });
+  }
+
+  static async #sendGMActivationOverride(actor, item, total, difficulty) {
+    const gmRecipients = getGMRecipients();
+    const message = await ChatMessage.create({
+      whisper: gmRecipients,
+      content: `
+        <div class="axv-arcana-gm-only">
+          <div><strong>Échec d’activation</strong> — ${escapeHtml(actor.name)} / ${escapeHtml(item.name)}</div>
+          <div>Total : <strong>${total}</strong> — Difficulté : <strong>${difficulty}</strong></div>
+          <div class="axv-arcana-gm-buttons">
+            <button type="button" data-axv-arcana-gm-action="confirm">Valider l’activation malgré l’échec</button>
+            <button type="button" data-axv-arcana-gm-action="refuse">Refuser</button>
+          </div>
+        </div>
+      `,
+      flags: {
+        arcane15: {
+          [AXV_ARCANA_CHAT_FLAG]: {
+            mode: "activation-failure",
+            actorId: actor.id,
+            itemId: item.id
+          }
+        }
+      }
+    });
+    return message;
+  }
+
+  static async #increasePossessionTier(actor, item, difficulty) {
+    const currentTier = Number(item.system?.possession?.tier ?? 0);
+    const nextTier = Math.min(6, currentTier + 1);
+    const effect = item.system?.possession?.[`tier${nextTier}`] || "";
+    await item.update({
+      "system.possession.tier": nextTier,
+      "system.possession.lastChangeAt": Date.now(),
+      "system.possession.lastEffect": effect
+    });
+
+    await ChatMessage.create({
+      whisper: getGMRecipients(),
+      content: `
+        <div class="axv-arcana-gm-only">
+          <div><strong>Palier de possession franchi</strong></div>
+          <div>Personnage : <strong>${escapeHtml(actor.name)}</strong></div>
+          <div>Arcane : <strong>${escapeHtml(item.name)}</strong></div>
+          <div>Palier atteint : <strong>${nextTier}</strong> (difficulté ${difficulty})</div>
+          <div class="axv-arcana-chat-effect">${effect || "<em>Aucun effet renseigné pour ce palier.</em>"}</div>
+        </div>
+      `
+    });
+
+    if (this.trackerApp?.rendered) this.trackerApp.render(false);
+  }
+
+  static #registerHooks() {
+    Hooks.on("createItem", (item) => {
+      if (item?.type === AXV_ARCANA_ITEM_TYPE) AXVArcanaManager.#afterArcanaChange();
+    });
+    Hooks.on("updateItem", (item) => {
+      if (item?.type === AXV_ARCANA_ITEM_TYPE) AXVArcanaManager.#afterArcanaChange();
+    });
+    Hooks.on("deleteItem", (item) => {
+      if (item?.type === AXV_ARCANA_ITEM_TYPE) AXVArcanaManager.#afterArcanaChange();
+    });
+
+    Hooks.on("getSceneControlButtons", (controls) => {
+      if (!game.user?.isGM) return;
+      controls.push({
+        name: "axv-arcana-mj",
+        title: "Suivi de Possession",
+        icon: "fa-solid fa-eye",
+        layer: "TokenLayer",
+        tools: [{
+          name: "axv-possession-tracker",
+          title: "Ouvrir le suivi de Possession",
+          icon: "fa-solid fa-masks-theater",
+          button: true,
+          onClick: () => AXVArcanaManager.openPossessionTracker()
+        }]
+      });
+    });
+
+    if (!this._chatHookBound) {
+      this._chatHookBound = true;
+      Hooks.on("renderChatMessageHTML", (message, html) => {
+        if (!message?.getFlag?.("arcane15", AXV_ARCANA_CHAT_FLAG) || !game.user?.isGM) return;
+        html.querySelectorAll?.("[data-axv-arcana-gm-action]")?.forEach?.((btn) => {
+          btn.addEventListener("click", (ev) => {
+            ev.preventDefault();
+            AXVArcanaManager.handleGMActivationDecision(message, btn.dataset.axvArcanaGmAction);
+          });
+        });
+      });
+    }
+  }
+
+  static #afterArcanaChange() {
+    this.renderBanner();
+    if (this.trackerApp?.rendered) this.trackerApp.render(false);
+    for (const actor of game.actors ?? []) {
+      for (const app of Object.values(actor.apps ?? {})) {
+        if (app?.rendered) app.render(false);
+      }
+    }
+  }
+}

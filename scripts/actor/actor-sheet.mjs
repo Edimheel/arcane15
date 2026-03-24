@@ -1,6 +1,7 @@
 // systems/arcane15/scripts/actor-sheet.mjs
 import { CardManager } from "./card-manager.mjs";
 import { CombatManager } from "./axv-combat.mjs";
+import { ArcanaManager } from "../arcana/axv-arcana-manager.mjs";
 const { DialogV2 } = foundry.applications.api;
 console.log("%c[ARCANE XV][SHEET] actor-sheet.mjs loaded (V2-only)", "color:#9b59b6;font-weight:900;");
 
@@ -77,7 +78,7 @@ export class Arcane15ActorSheet extends HandlebarsApplicationMixin(ActorSheetV2)
   static DEFAULT_OPTIONS = {
     tag: "form",
     classes: ["arcane15", "sheet", "actor"],
-    position: { width: 800, height: 900 },
+    position: { width: 1180, height: 980 },
     window: { resizable: true },
     tabs: [{
       navSelector: ".sheet-tabs",
@@ -109,10 +110,13 @@ export class Arcane15ActorSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       cards: [],
       enrichedDescription: {
         arcanes: "",
-        atouts: "",
         equipement: "",
         notes: ""
-      }
+      },
+      enrichedAtoutsPersonnage: "",
+      characterAtoutCards: ArcanaManager.getCharacterAtouts(actor),
+      arcaneAtouts: ArcanaManager.getActorArcana(actor),
+      canManageArcana: actor.isOwner || game.user?.isGM
     };
 
     const enrichOptions = {
@@ -122,9 +126,9 @@ export class Arcane15ActorSheet extends HandlebarsApplicationMixin(ActorSheetV2)
     };
 
     context.enrichedDescription.arcanes = await TextEditor.enrichHTML(actor.system?.description?.arcanes ?? "", enrichOptions);
-    context.enrichedDescription.atouts = await TextEditor.enrichHTML(actor.system?.description?.atouts ?? "", enrichOptions);
     context.enrichedDescription.equipement = await TextEditor.enrichHTML(actor.system?.description?.equipement ?? "", enrichOptions);
     context.enrichedDescription.notes = await TextEditor.enrichHTML(actor.system?.description?.notes ?? "", enrichOptions);
+    context.enrichedAtoutsPersonnage = await TextEditor.enrichHTML(actor.system?.atouts?.personnage ?? "", enrichOptions);
 
     // Main (hand) si déjà initialisée
     const handId = actor.getFlag("arcane15", "hand");
@@ -164,6 +168,11 @@ export class Arcane15ActorSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
     // FIX ONGLET VIDE : on force l’activation et l’affichage des .tab
     this.#manageTabs();
+    try {
+      ArcanaManager.bindSheet(this);
+    } catch (e) {
+      console.error("[ARCANE XV][ARCANA] bindSheet failed", e);
+    }
 
     // --- Portrait click → FilePicker ---
     const portrait = this.element.querySelector(".character-portrait[data-edit='img']");
@@ -754,6 +763,13 @@ export class Arcane15ActorSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       console.error("[ARCANE XV][SHEET][COMBAT][ERROR]", e);
       ui.notifications?.error?.("Erreur combat (voir console).");
     }
+  }
+
+
+  async _onDrop(event) {
+    const handled = await ArcanaManager.handleActorSheetDrop(this, event);
+    if (handled) return handled;
+    return super._onDrop?.(event);
   }
 
   // ============================================================

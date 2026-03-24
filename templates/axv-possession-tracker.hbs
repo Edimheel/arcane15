@@ -1,0 +1,41 @@
+<section class="axv-possession-tracker">
+  <header class="axv-possession-tracker__header">
+    <h2>Suivi de Possession</h2>
+    <p>État par personnage et par atout d'arcane actif ou lié.</p>
+  </header>
+
+  <div class="axv-possession-tracker__table-wrap">
+    <table class="axv-possession-tracker__table">
+      <thead>
+        <tr>
+          <th>Personnage</th>
+          <th>Arcane</th>
+          <th>Sataniste</th>
+          <th>État</th>
+          <th>Palier</th>
+          <th>Dernier changement</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each rows}}
+        <tr>
+          <td>{{this.actorName}}</td>
+          <td>{{this.itemName}}</td>
+          <td>{{this.sataniste}}</td>
+          <td>{{this.stateLabel}}</td>
+          <td>{{this.level}}</td>
+          <td>{{this.lastChange}}</td>
+        </tr>
+        <tr class="axv-possession-tracker__detail-row">
+          <td colspan="6">
+            <div><strong>Effet du palier courant :</strong> {{{this.currentEffect}}}</div>
+            {{#if this.notesMj}}<div><strong>Notes MJ :</strong> {{{this.notesMj}}}</div>{{/if}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6">Aucun atout d'arcane majeur trouvé.</td></tr>
+        {{/each}}
+      </tbody>
+    </table>
+  </div>
+</section>

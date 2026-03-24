@@ -792,7 +792,9 @@ export class CardManager {
     const skillName = (skillKey.charAt(0).toUpperCase() + skillKey.slice(1)) + (skillData?.label ? ` (${skillData.label})` : "");
     const baseSkillValue = Number(skillData?.total ?? 0);
     const malEnPointMod = actor?.getFlag?.("arcane15", "malEnPoint") ? -1 : 0;
-    const skillValue = baseSkillValue + malEnPointMod;
+    const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
+    const arcanaMods = ArcanaManager?.getSkillModifiers ? ArcanaManager.getSkillModifiers(actor, skillKey) : { net: 0, labels: [], consume: [] };
+    const skillValue = baseSkillValue + malEnPointMod + Number(arcanaMods?.net || 0);
 
     const cards = hand.cards.contents.slice().sort((a, b) => {
       const aj = CardManager._isJoker(a);
@@ -803,6 +805,10 @@ export class CardManager {
     });
 
     const dialogId = `axv-hand-${Date.now()}`;
+    const modifiersLine = [
+      malEnPointMod ? `Mal en point ${malEnPointMod}` : "",
+      ...(arcanaMods?.labels || [])
+    ].filter(Boolean).join(" • ");
 
     const cardsHtml = cards.map(c => {
       const img = CardManager._getCardImg(c) || "icons/svg/hazard.svg";
@@ -855,6 +861,7 @@ export class CardManager {
           <div>
             <div class="axv-title">${actor.name} — ${skillName}</div>
             <div class="axv-sub">Clique sur une carte pour la jouer. Le MJ fixe la difficulté avant le résultat.</div>
+            ${modifiersLine ? `<div class="axv-sub">${modifiersLine}</div>` : ""}
           </div>
           <div class="axv-badge">Compétence : ${skillValue}${malEnPointMod ? ` <span style="opacity:.85;">(${baseSkillValue} ${malEnPointMod})</span>` : ""}</div>
         </div>
@@ -908,10 +915,9 @@ export class CardManager {
         const finalTotal = skillValue + cardValue;
 
         console.log("[ARCANE XV][ROLL] preparing difficulty request", {
-          actor: actor.name, skillName, baseSkillValue, malEnPointMod, skillValue, cardName, cardValue, finalTotal
+          actor: actor.name, skillName, baseSkillValue, malEnPointMod, skillValue, cardName, cardValue, finalTotal, arcanaMods
         });
 
-        // 1) demander la difficulté au MJ
         const diff = await CardManager._requestDifficultyFromGM({
           actor, skillKey, skillName, skillValue, card, cardName, cardValue, finalTotal
         });
@@ -919,13 +925,14 @@ export class CardManager {
         const difficulty = Number(diff?.difficulty ?? 0);
         const success = finalTotal >= difficulty;
         const verdict = success ? "RÉUSSITE" : "ÉCHEC";
+        const actionButtons = ArcanaManager?.getRollActionButtons
+          ? ArcanaManager.getRollActionButtons(actor, skillKey, { skillName, difficulty, skillTotal: skillValue, cardValue, finalTotal })
+          : "";
 
         console.log("[ARCANE XV][ROLL] difficulty resolved", { difficulty, verdict, finalTotal });
 
-        // 2) message chat (après difficulté)
-        console.log("[ARCANE XV][CHAT] creating message...");
         await ChatMessage.create({
-content: `
+          content: `
   <div class="axv-chat-card" style="width:100%; max-width:100%; box-sizing:border-box; border:1px solid rgba(0,0,0,.2); border-radius:14px; overflow:hidden; background:#fff;">
     <div style="padding:10px 12px; border-bottom:1px solid rgba(0,0,0,.12); font-weight:900; box-sizing:border-box;">
       ${actor.name} — ${skillName}
@@ -935,19 +942,39 @@ content: `
       <div style="flex:1; min-width:0; overflow-wrap:anywhere; word-break:break-word;">
         <div style="font-weight:900; font-size:14px; margin-bottom:6px; overflow-wrap:anywhere; word-break:break-word;">${cardName}</div>
         <div>Compétence : <strong>${skillValue}</strong></div>
+        ${modifiersLine ? `<div>Modificateurs : <strong>${modifiersLine}</strong></div>` : ""}
         <div>Carte : <strong>+${cardValue}</strong></div>
         <div>Difficulté (MJ) : <strong>${difficulty}</strong></div>
         <div style="margin-top:10px; font-weight:900; font-size:18px;">TOTAL : ${finalTotal}</div>
         <div style="margin-top:6px; font-weight:900; font-size:16px;">${verdict}</div>
+        ${actionButtons || ""}
       </div>
     </div>
   </div>
 `,
           speaker: ChatMessage.getSpeaker({ actor })
         });
-        console.log("[ARCANE XV][CHAT] message created");
 
-        // 3) cycle
+        try {
+          await actor.setFlag("arcane15", "lastSkillTest", {
+            skillKey,
+            skillName,
+            difficulty,
+            success,
+            timestamp: Date.now(),
+            finalTotal,
+            skillTotal: skillValue,
+            cardValue,
+            source: "normal"
+          });
+        } catch (flagError) {
+          console.warn("[ARCANE XV][ROLL] unable to store lastSkillTest", flagError);
+        }
+
+        if (arcanaMods?.consume?.length && ArcanaManager?.consumeSkillModifiers) {
+          await ArcanaManager.consumeSkillModifiers(actor, arcanaMods.consume);
+        }
+
         if (!isJoker) {
           console.log("[ARCANE XV][ROLL] cycling card after chat", { cardId: card.id });
           await CardManager.cycleCard(actor, card);
@@ -962,7 +989,6 @@ content: `
       }
     });
   }
-
 
 
   static async cleanupActorDecks(actor, { clearFlags = false } = {}) {

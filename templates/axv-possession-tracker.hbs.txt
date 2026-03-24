@@ -1,0 +1,44 @@
+<section class="axv-possession-tracker-root">
+  <header class="axv-possession-header">
+    <h2>Suivi MJ de la Possession</h2>
+  </header>
+  <div class="axv-possession-table-wrap">
+    <table class="axv-possession-table">
+      <thead>
+        <tr>
+          <th>Personnage</th>
+          <th>Arcane</th>
+          <th>Sataniste</th>
+          <th>Actif</th>
+          <th>Palier</th>
+          <th>Dernier changement</th>
+          <th>Dernier effet</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#if rows.length}}
+          {{#each rows}}
+            <tr>
+              <td>
+                <div class="axv-possession-actor">
+                  <img src="{{this.actorImg}}" alt="{{this.actorName}}" />
+                  <span>{{this.actorName}}</span>
+                </div>
+              </td>
+              <td>{{this.arcaneName}}</td>
+              <td>{{this.sataniste}}</td>
+              <td>{{#if this.active}}Oui{{else}}Non{{/if}}</td>
+              <td>{{this.tier}}</td>
+              <td>{{this.lastChangeAt}}</td>
+              <td>{{{this.lastEffect}}}</td>
+            </tr>
+          {{/each}}
+        {{else}}
+          <tr>
+            <td colspan="7" class="axv-empty">Aucun atout d’arcane majeur sur les acteurs.</td>
+          </tr>
+        {{/if}}
+      </tbody>
+    </table>
+  </div>
+</section>

@@ -1,0 +1,374 @@
+
+/* ---------- Onglet Atouts / présentation conviviale ---------- */
+.arcane15.sheet.actor .sheet-tabs {
+  gap: 6px;
+  background: transparent;
+  border-bottom: 1px solid rgba(0,0,0,.18);
+  padding-bottom: 10px;
+}
+
+.arcane15.sheet.actor .sheet-tabs .item {
+  flex: 0 0 auto;
+  min-width: 120px;
+  border: 1px solid rgba(0,0,0,.18);
+  border-radius: 999px;
+  background: linear-gradient(180deg, #faf7f0 0%, #eee4d6 100%);
+  box-shadow: 0 2px 6px rgba(0,0,0,.06);
+}
+
+.arcane15.sheet.actor .sheet-tabs .item.active {
+  background: linear-gradient(180deg, #8c1229 0%, #5d0818 100%);
+  color: #fff !important;
+  border-color: #5d0818;
+}
+
+.axv-atouts-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.25fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.axv-atouts-section {
+  background: linear-gradient(180deg, rgba(255,255,255,.95) 0%, rgba(248,244,239,.95) 100%);
+  border: 1px solid rgba(0,0,0,.14);
+  border-radius: 18px;
+  padding: 14px;
+  box-shadow: 0 8px 20px rgba(0,0,0,.06);
+}
+
+.axv-atouts-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 14px;
+}
+
+.axv-atouts-help {
+  margin: 4px 0 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: rgba(0,0,0,.72);
+}
+
+.axv-character-atout-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.axv-character-atout-card {
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 16px;
+  background: #fff;
+  padding: 12px 14px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.05);
+}
+
+.axv-character-atout-title {
+  font-size: 16px;
+  font-weight: 900;
+  margin-bottom: 8px;
+  color: #4d0a18;
+}
+
+.axv-character-atout-effect {
+  margin-top: 8px;
+}
+
+.axv-character-atout-effect p,
+.axv-arcana-effect p {
+  margin: 4px 0 0 0;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.axv-atouts-source {
+  margin-top: 14px;
+  border-top: 1px solid rgba(0,0,0,.1);
+  padding-top: 10px;
+}
+
+.axv-atouts-source summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.axv-arcana-panel {
+  border: 1px dashed rgba(93,8,24,.35);
+  background: linear-gradient(180deg, rgba(255,250,251,.95) 0%, rgba(248,244,239,.95) 100%);
+  padding: 10px;
+  border-radius: 18px;
+}
+
+.axv-arcana-panel[data-drop-active="1"] {
+  outline: 3px solid #8c1229;
+  outline-offset: 2px;
+}
+
+.axv-arcana-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.axv-arcana-card {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 14px;
+  border: 1px solid rgba(0,0,0,.14);
+  border-radius: 18px;
+  background: #fff;
+  padding: 12px;
+  box-shadow: 0 6px 16px rgba(0,0,0,.06);
+}
+
+.axv-arcana-card.is-active {
+  border-color: rgba(140,18,41,.55);
+  box-shadow: 0 0 0 2px rgba(140,18,41,.16), 0 10px 18px rgba(0,0,0,.08);
+  background: linear-gradient(180deg, #fff 0%, #fff8fa 100%);
+}
+
+.axv-arcana-media {
+  display: flex;
+  align-items: start;
+  justify-content: center;
+}
+
+.axv-arcana-image {
+  width: 72px;
+  height: 108px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid rgba(0,0,0,.2);
+  box-shadow: 0 8px 18px rgba(0,0,0,.18);
+  background: #111;
+}
+
+.axv-arcana-body {
+  min-width: 0;
+}
+
+.axv-arcana-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: start;
+  margin-bottom: 8px;
+}
+
+.axv-arcana-name {
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.15;
+  color: #4d0a18;
+}
+
+.axv-arcana-sataniste {
+  font-size: 12px;
+  color: rgba(0,0,0,.72);
+  margin-top: 2px;
+}
+
+.axv-arcana-state {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .06em;
+  border: 1px solid rgba(0,0,0,.14);
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f8efe5;
+  white-space: nowrap;
+}
+
+.axv-arcana-effect {
+  margin-top: 8px;
+}
+
+.axv-arcana-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.axv-arcana-btn {
+  border: 1px solid rgba(0,0,0,.18);
+  background: linear-gradient(180deg, #fff 0%, #f1e7db 100%);
+  color: #1a1a1a;
+  padding: 6px 10px;
+  font-weight: 800;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.axv-arcana-empty {
+  padding: 8px 0;
+  color: rgba(0,0,0,.7);
+  font-style: italic;
+}
+
+/* ---------- Bandeau public ---------- */
+#axv-arcana-banner {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12000;
+  display: flex;
+  gap: 10px;
+  pointer-events: none;
+  max-width: min(1100px, calc(100vw - 160px));
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+#axv-arcana-banner[hidden] {
+  display: none !important;
+}
+
+.axv-banner-card {
+  display: grid;
+  grid-template-columns: 60px minmax(180px, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 260px;
+  max-width: 420px;
+  background: rgba(17, 16, 19, 0.96);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 16px;
+  padding: 8px 10px;
+  box-shadow: 0 12px 22px rgba(0,0,0,.35);
+}
+
+.axv-banner-card.is-heroic {
+  outline: 2px solid #ffd38a;
+  box-shadow: 0 0 0 2px rgba(255,211,138,.18), 0 14px 24px rgba(0,0,0,.42);
+}
+
+.axv-banner-card img {
+  width: 56px;
+  height: 84px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.15);
+}
+
+.axv-banner-title {
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.axv-banner-sub {
+  font-size: 12px;
+  opacity: 0.92;
+  margin-top: 2px;
+}
+
+.axv-banner-mode {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.12);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* ---------- Suivi MJ ---------- */
+.axv-possession-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.axv-possession-table th,
+.axv-possession-table td {
+  border: 1px solid rgba(0,0,0,.12);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  background: #fff;
+}
+
+.axv-possession-table th {
+  background: #4d0a18;
+  color: #fff;
+  font-weight: 800;
+}
+
+.axv-possession-empty {
+  padding: 12px 0;
+}
+
+.chat-sidebar .chat-scroll.scrolled #chat-log .chat-message .axv-arcana-gm-card {
+  border: 1px solid rgba(0,0,0,.16);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.chat-sidebar .chat-scroll.scrolled #chat-log .chat-message .axv-arcana-gm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.chat-sidebar .chat-scroll.scrolled #chat-log .chat-message .axv-arcana-gm-actions button {
+  border: 1px solid rgba(0,0,0,.16);
+  background: #fff;
+  color: #000;
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+@media (max-width: 980px) {
+  .axv-atouts-layout {
+    grid-template-columns: 1fr;
+  }
+  .axv-arcana-card {
+    grid-template-columns: 1fr;
+  }
+  .axv-arcana-media {
+    justify-content: start;
+  }
+}
+
+
+/* ---------- Ajustements ergonomie Atouts ---------- */
+.axv-atouts-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr); gap: 20px; }
+.axv-character-atout-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.axv-character-atout-card { min-height: 100%; }
+.axv-atouts-section { padding: 16px; }
+.axv-arcana-card { grid-template-columns: 150px minmax(0, 1fr); }
+.axv-arcana-image { width: 144px; height: 216px; }
+.axv-arcana-name { font-size: 20px; }
+.axv-arcana-effect { background: rgba(248,244,239,.82); border: 1px solid rgba(0,0,0,.08); border-radius: 12px; padding: 10px 12px; }
+@media (max-width: 1280px) {
+  .axv-atouts-layout { grid-template-columns: 1fr; }
+}
+
+
+/* ---------- Atouts : cartes d’arcane réduites ---------- */
+.axv-arcana-card {
+  align-items: start;
+}
+
+.axv-arcana-sataniste {
+  font-size: 11px;
+}
+
+.axv-arcana-effect p {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.axv-arcana-actions .axv-arcana-btn {
+  font-size: 11px;
+}

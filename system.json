@@ -10,11 +10,19 @@
     "arcane15.js"
   ],
   "styles": [
-    "styles/arcane15.css"
+    "styles/arcane15.css",
+    "styles/arcane15-arcana.css"
   ],
   "documentTypes": {
-    "Actor": ["personnage"],
-    "Card": ["base"]
+    "Actor": [
+      "personnage"
+    ],
+    "Card": [
+      "base"
+    ],
+    "Item": [
+      "atoutArcane"
+    ]
   },
   "url": "",
   "manifest": "",

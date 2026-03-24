@@ -1461,6 +1461,18 @@ export class CombatManager {
       if (attackVitalite <= 0) { atkAdj -= 1; atkStateMods.push('Mal en point -1'); }
       if (defenseVitalite <= 0) { defAdj -= 1; defStateMods.push('Mal en point -1'); }
 
+      const attackRuntime = attackActor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
+      const defenseRuntime = defenseActor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
+      const attackAllTestsMalus = Number(attackRuntime?.allTestsMalus?.value || 0);
+      const defenseAllTestsMalus = Number(defenseRuntime?.allTestsMalus?.value || 0);
+      if (attackAllTestsMalus) { atkAdj -= attackAllTestsMalus; atkStateMods.push(`${attackRuntime?.allTestsMalus?.label || 'Malus arcane'} -${attackAllTestsMalus}`); }
+      if (defenseAllTestsMalus) { defAdj -= defenseAllTestsMalus; defStateMods.push(`${defenseRuntime?.allTestsMalus?.label || 'Malus arcane'} -${defenseAllTestsMalus}`); }
+
+      const attackDoublePrimes = !!attackRuntime?.statuses?.doublePrimes;
+      const defenseDoublePrimes = !!defenseRuntime?.statuses?.doublePrimes;
+      if (attackDoublePrimes && attackPP.primes.includes('efficacite')) { atkAdj += 1; atkMods.push('Maison-dieu : Efficacité doublée'); }
+      if (defenseDoublePrimes && defensePP.primes.includes('prudence')) { defAdj += 1; defMods.push('Maison-dieu : Prudence doublée'); }
+
       const atkCardVal = attackCard?.isJoker ? 0 : Number(attackCard?.value ?? 0);
       const defCardVal = defenseCard?.isJoker ? 0 : Number(defenseCard?.value ?? 0);
       const atkBase = Number(attackSkill) + atkCardVal + Number(weaponMod || 0);
@@ -1475,6 +1487,10 @@ export class CombatManager {
       if (hit && attackPP.primes.includes('attaque_meurtriere')) {
         damage += 2;
         damageMods.push('Attaque meurtrière +2 dégâts');
+        if (attackDoublePrimes) {
+          damage += 2;
+          damageMods.push('Maison-dieu : Attaque meurtrière doublée (+2)');
+        }
       }
       if (hit && attackPP.primes.includes('attaques_multiples')) {
         damage = Math.ceil(damage / 2);
@@ -1483,6 +1499,11 @@ export class CombatManager {
       if (hit && defensePP.penalites.includes('blessure_legere')) {
         damage = Math.ceil(damage / 2);
         damageMods.push('Blessure légère dégâts/2');
+      }
+      const attackArcaneDamageBonus = Number(attackActor?.getFlag?.('arcane15', 'arcaneDamageBonus') ?? 0);
+      if (hit && attackArcaneDamageBonus) {
+        damage += attackArcaneDamageBonus;
+        damageMods.push(`Arcane-sans-nom +${attackArcaneDamageBonus} dégâts`);
       }
 
       console.log('[ARCANE XV][COMBAT][RESOLVE] exchange modifiers', {

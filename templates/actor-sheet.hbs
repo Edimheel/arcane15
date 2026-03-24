@@ -27,6 +27,8 @@
         <a class="item" data-tab="competences">Compétences</a>
         <a class="item" data-tab="combat">Combat</a>
         <a class="item" data-tab="description">Description</a>
+        <a class="item" data-tab="atouts">Atouts</a>
+        <a class="item" data-tab="main">Main</a>
     </nav>
 
     <section class="sheet-body" data-axv-scroll-root="1">
@@ -189,61 +191,141 @@
         </div>
 
         <div class="tab" data-tab="description">
-            <h2 class="comp-title">Arcanes Majeurs</h2>
-            <div class="textarea-box">
-                {{#if actor.isOwner}}
-                <textarea name="system.description.arcanes">{{system.description.arcanes}}</textarea>
-                {{else}}
-                <div class="axv-text-display">{{system.description.arcanes}}</div>
-                {{/if}}
+            <div class="axv-description-grid">
+                <section class="axv-sheet-panel axv-sheet-panel--full">
+                    <h2 class="comp-title">Équipement</h2>
+                    <div class="textarea-box textarea-box--medium">
+                        {{#if actor.isOwner}}
+                        <textarea name="system.description.equipement">{{system.description.equipement}}</textarea>
+                        {{else}}
+                        <div class="axv-text-display">{{{enrichedDescription.equipement}}}</div>
+                        {{/if}}
+                    </div>
+                </section>
+
+                <section class="axv-sheet-panel axv-sheet-panel--full axv-notes-panel">
+                    <h2 class="comp-title">Notes</h2>
+                    <div class="textarea-box textarea-box--medium">
+                        {{#if actor.isOwner}}
+                        <textarea name="system.description.notes">{{system.description.notes}}</textarea>
+                        {{else}}
+                        <div class="axv-text-display">{{{enrichedDescription.notes}}}</div>
+                        {{/if}}
+                    </div>
+                </section>
             </div>
-            <h2 class="comp-title">Atouts</h2>
-            <div class="textarea-box">
-                {{#if actor.isOwner}}
-                <textarea name="system.description.atouts">{{system.description.atouts}}</textarea>
-                {{else}}
-                <div class="axv-text-display">{{system.description.atouts}}</div>
-                {{/if}}
+        </div>
+
+        
+        <div class="tab" data-tab="atouts">
+            <div class="axv-atouts-layout">
+                <section class="axv-atouts-section">
+                    <div class="axv-atouts-hero">
+                        <div>
+                            <h2 class="comp-title">Atouts du personnage</h2>
+                        </div>
+                    </div>
+
+                    {{#if characterAtoutCards.length}}
+                    <div class="axv-character-atout-grid">
+                        {{#each characterAtoutCards}}
+                        <article class="axv-character-atout-card">
+                            <div class="axv-character-atout-title">{{this.name}}</div>
+                            <div class="axv-character-atout-effect">
+                                <strong>Effet courant</strong>
+                                <p>{{this.currentEffect}}</p>
+                            </div>
+                            <div class="axv-character-atout-effect">
+                                <strong>Effet héroïque</strong>
+                                <p>{{this.heroicEffect}}</p>
+                            </div>
+                        </article>
+                        {{/each}}
+                    </div>
+                    {{else}}
+                    <div class="axv-arcana-empty">Aucun</div>
+                    {{/if}}
+                </section>
+
+                <section class="axv-atouts-section">
+                    <div class="axv-atouts-hero">
+                        <div>
+                            <h2 class="comp-title">Atouts d’arcane majeur</h2>
+                        </div>
+                    </div>
+
+                    <div class="axv-arcana-panel" data-arcana-dropzone="1">
+                        {{#if arcaneAtouts.length}}
+                        <div class="axv-arcana-list">
+                            {{#each arcaneAtouts}}
+                            <article class="axv-arcana-card {{#if this.active}}is-active{{/if}}">
+                                <div class="axv-arcana-media">
+                                    <img class="axv-arcana-image" src="{{this.img}}" alt="{{this.name}}"/>
+                                </div>
+                                <div class="axv-arcana-body">
+                                    <div class="axv-arcana-head">
+                                        <div>
+                                            <div class="axv-arcana-name">{{this.name}}</div>
+                                            <div class="axv-arcana-sataniste">{{this.sataniste}}</div>
+                                        </div>
+                                        <div class="axv-arcana-state">{{#if this.active}}ACTIF{{else}}LIÉ{{/if}}</div>
+                                    </div>
+                                    <div class="axv-arcana-effect">
+                                        <strong>Effet courant</strong>
+                                        <p>{{this.currentEffect}}</p>
+                                    </div>
+                                    <div class="axv-arcana-effect">
+                                        <strong>Effet héroïque</strong>
+                                        <p>{{this.heroicEffect}}</p>
+                                    </div>
+                                    {{#if ../canManageArcana}}
+                                    <div class="axv-arcana-actions">
+                                        {{#if this.active}}
+                                        <button type="button" class="axv-arcana-btn axv-arcana-deactivate" data-item-id="{{this.id}}">Désactiver</button>
+                                        {{else}}
+                                        <button type="button" class="axv-arcana-btn axv-arcana-activate" data-item-id="{{this.id}}">Activer</button>
+                                        {{/if}}
+                                        <button type="button" class="axv-arcana-btn axv-arcana-heroic" data-item-id="{{this.id}}">Effet héroïque (-{{this.heroicCost}} Destin)</button>
+                                        <button type="button" class="axv-arcana-btn axv-arcana-remove" data-item-id="{{this.id}}">Retirer</button>
+                                    </div>
+                                    {{/if}}
+                                </div>
+                            </article>
+                            {{/each}}
+                        </div>
+                        {{else}}
+                        <div class="axv-arcana-empty">Aucun</div>
+                        {{/if}}
+                    </div>
+                </section>
             </div>
-            <h2 class="comp-title">Équipement</h2>
-            <div class="textarea-box">
-                {{#if actor.isOwner}}
-                <textarea name="system.description.equipement">{{system.description.equipement}}</textarea>
+        </div>
+
+        <div class="tab" data-tab="main">
+            <div class="axv-sheet-panel axv-sheet-panel--full">
+                <div class="axv-main-tab-head">
+                    <div>
+                        <h2 class="comp-title">Main</h2>
+                        <p class="axv-atouts-help">Les cartes sont regroupées ici pour alléger le reste de la fiche.</p>
+                    </div>
+                </div>
+                {{#if canViewHand}}
+                <div class="hand-container hand-container--tab">
+                    {{#each cards}}
+                    <div class="hand-card hand-card--compact" title="{{this.name}}">
+                        <img class="hand-card-image" src="{{this.img}}" alt="{{this.name}}" draggable="false"/>
+                        <div class="hand-card-meta">
+                            <div class="hand-card-label">{{this.name}}</div>
+                        </div>
+                    </div>
+                    {{else}}
+                    <div class="hand-empty">Aucune carte (Créez un nouvel acteur)</div>
+                    {{/each}}
+                </div>
                 {{else}}
-                <div class="axv-text-display">{{system.description.equipement}}</div>
-                {{/if}}
-            </div>
-            <h2 class="comp-title">Notes</h2>
-            <div class="textarea-box">
-                {{#if actor.isOwner}}
-                <textarea name="system.description.notes">{{system.description.notes}}</textarea>
-                {{else}}
-                <div class="axv-text-display">{{system.description.notes}}</div>
+                <div class="hand-empty">Main masquée sur cette fiche.</div>
                 {{/if}}
             </div>
         </div>
     </section>
-
-    {{#if canViewHand}}
-    <footer class="hand-hud">
-        <div class="hand-header">MAIN</div>
-        <div class="hand-container">
-            {{#each cards}}
-            <div class="hand-card" title="{{this.name}}">
-                <img class="hand-card-image" src="{{this.img}}" alt="{{this.name}}" draggable="false"/>
-                <div class="hand-card-meta">
-                    <div class="hand-card-label">{{this.name}}</div>
-                </div>
-            </div>
-            {{else}}
-            <div class="hand-empty">Aucune carte (Créez un nouvel acteur)</div>
-            {{/each}}
-        </div>
-    </footer>
-    {{else}}
-    <footer class="hand-hud hand-hud--hidden">
-        <div class="hand-header">MAIN</div>
-        <div class="hand-empty">Main masquée sur cette fiche.</div>
-    </footer>
-    {{/if}}
 </div>

@@ -1,6 +1,31 @@
 {
   "Actor": {
-    "types": ["personnage"],
-    "personnage": {}
+    "types": [
+      "personnage"
+    ],
+    "personnage": {
+      "atouts": {
+        "personnage": ""
+      }
+    }
+  },
+  "Item": {
+    "types": [
+      "atoutArcane"
+    ],
+    "atoutArcane": {
+      "arcaneId": "",
+      "arcaneNumber": 0,
+      "linked": true,
+      "active": false,
+      "currentEffect": "",
+      "heroicEffect": "",
+      "heroicCost": 1,
+      "sataniste": "",
+      "possessionLevel": 0,
+      "possessionEffect": "",
+      "lastHeroicAt": 0,
+      "notes": ""
+    }
   }
 }

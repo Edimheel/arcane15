@@ -23,7 +23,8 @@ export class PersonnageData extends foundry.abstract.TypeDataModel {
       nom: new fields.StringField({initial: ""}),
       degats: new fields.StringField({initial: ""}),
       portee: new fields.StringField({initial: ""}),
-      munitions: new fields.StringField({initial: ""})
+      munitions: new fields.StringField({initial: ""}),
+      skillKey: new fields.StringField({initial: ""})
     });
 
     return {
@@ -58,9 +59,13 @@ export class PersonnageData extends foundry.abstract.TypeDataModel {
       // --- DESCRIPTION & NOTES ---
       description: new fields.SchemaField({
         arcanes: new fields.HTMLField({initial: ""}),
-        atouts: new fields.HTMLField({initial: ""}),
         equipement: new fields.HTMLField({initial: ""}),
         notes: new fields.HTMLField({initial: ""})
+      }),
+
+      // --- ATOUTS ---
+      atouts: new fields.SchemaField({
+        personnage: new fields.HTMLField({initial: ""})
       }),
 
       // --- COMPÉTENCES (Liste complète) ---

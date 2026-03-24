@@ -1,0 +1,22 @@
+<div class="sheet-container axv-atout-sheet">
+  <header class="sheet-header" style="display:flex; gap:12px; align-items:flex-start;">
+    <img src="{{item.img}}" alt="{{item.name}}" style="width:110px; height:165px; object-fit:cover; border:2px solid #000; background:#fff;"/>
+    <div style="flex:1 1 auto; min-width:0;">
+      <div class="bio-row"><label>Nom</label><input type="text" name="name" value="{{item.name}}"/></div>
+      <div class="bio-row"><label>Arcane ID</label><input type="text" name="system.arcaneId" value="{{system.arcaneId}}"/></div>
+      <div class="bio-row"><label>Sataniste</label><input type="text" name="system.sataniste" value="{{system.sataniste}}"/></div>
+      <div class="bio-row"><label>Coût héroïque</label><input type="number" name="system.heroicCost" value="{{system.heroicCost}}"/></div>
+      <div class="bio-row"><label>Lié</label><input type="checkbox" name="system.linked" {{checked system.linked}}/></div>
+      <div class="bio-row"><label>Actif</label><input type="checkbox" name="system.active" {{checked system.active}}/></div>
+    </div>
+  </header>
+
+  <h2 class="comp-title">Effet courant</h2>
+  <div class="textarea-box"><textarea name="system.currentEffect">{{system.currentEffect}}</textarea></div>
+
+  <h2 class="comp-title">Effet héroïque</h2>
+  <div class="textarea-box"><textarea name="system.heroicEffect">{{system.heroicEffect}}</textarea></div>
+
+  <h2 class="comp-title">Notes MJ</h2>
+  <div class="textarea-box"><textarea name="system.notes">{{system.notes}}</textarea></div>
+</div>
