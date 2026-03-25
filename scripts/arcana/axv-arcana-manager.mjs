@@ -106,6 +106,287 @@ const PERSONAL_ATOUT_DEFINITIONS = [
 const ARCANA_BY_ID = new Map(ARCANA_DEFINITIONS.map(a => [a.arcaneId, a]));
 const PERSONAL_BY_KEY = new Map(PERSONAL_ATOUT_DEFINITIONS.map(a => [a.key, a]));
 
+
+const POSSESSION_SCALES_BY_ARCANE = {
+  papesse: {
+    1: "Contact. Rien de particulier.",
+    2: "Dans la bibliothèque : rêve de la bibliothèque de la villa Hérodiade, discussion oubliée avec Gabriel d’Offémont, réveil oppressé.",
+    3: "Bibliophilie : ajoute le domaine Bibliophilie à Connaissance tant que la possession dure.",
+    4: "Le livre noir : découvre un livre noir au pentagramme argenté qui semble ouvrir sur un abîme avant de redevenir banal.",
+    5: "Dans la bibliothèque 2 : se réveille de nuit dans la bibliothèque de la villa Hérodiade, un livre noir en main.",
+    6: "L’ami d’Hermanus : cherche à joindre la descendance d’Hermanus Noor via Serpents et échelles."
+  },
+  empereur: {
+    1: "Contact. Rien de particulier.",
+    2: "Le jury : rêve d’une salle d’audience et d’un jury composé des autres membres du club de la Salamandre.",
+    3: "Le droit, ça me connaît ! : ajoute le domaine Droit à Connaissance tant que la possession dure.",
+    4: "Garde-robe : découvre dans un placard des robes d’avocat brûlées et imprégnées d’odeur de fumée.",
+    5: "Où es-tu Viviane ? : cherche à localiser puis dérober l’arcane de l’Étoile.",
+    6: "Sur les lieux de l’incendie : retourne aussitôt à Saint-Crépin-aux-Bois pour comprendre l’incendie de la villa Hérodiade."
+  },
+  amoureux: {
+    1: "Contact. Rien de particulier.",
+    2: "Camisole : cauchemar d’asile, camisole de force, bain glacé et médecin nommé Corbin.",
+    3: "Le serpent : croit percevoir un serpent noir qui rôde dans son logement ou son véhicule.",
+    4: "Un joli dessin ! : dessine en somnambule un arcane majeur du tarot de Seth sur un mur.",
+    5: "Perdu sur les quais de Seine : reprend conscience devant l’ancien immeuble de Basilis, quai Henry IV à Paris.",
+    6: "Le collectionneur : tente de reconstituer le tarot de Seth, éventuellement avec Bernadette Meffret."
+  },
+  chariot: {
+    1: "Contact. Rien de particulier.",
+    2: "L’écurie : rêve d’un immense cheval noir aux yeux écarlates et aux naseaux en flammes.",
+    3: "Le tirage de cartes : entend une voix qui dicte un tirage de tarot et souffle qu’un autre PJ va le trahir.",
+    4: "Le tirage de cartes 2 : hallucination d’un salon tendu de velours violet où Charles Moritz l’attend.",
+    5: "Vous êtes là ? : se réveille de nuit devant l’appartement de Vincent Fichet en appelant Charles.",
+    6: "Le Jugement : cherche Charles Moritz et tente de voler l’arcane du Jugement."
+  },
+  justice: {
+    1: "Contact. Rien de particulier.",
+    2: "La photographie des vingt : rêve de la photo de groupe des porteurs d’arcanes, tous aux yeux écarlates.",
+    3: "Le procès : entend les échos d’un procès et croit devoir se défendre d’une accusation grave.",
+    4: "Un cadavre dans mon lit : hallucination du corps de Pierre Veilleur, deuxième mari de Claude Barnard.",
+    5: "Attention, poison ! : découvre chez lui de la mort au rat qu’il est certain de ne pas avoir achetée.",
+    6: "L’empoisonneuse : cherche à éliminer les compagnons de son hôte en empoisonnant nourriture ou boisson."
+  },
+  ermite: {
+    1: "Contact. Rien de particulier.",
+    2: "Désert : série de rêves dans un immense désert, avec réveils assoiffés.",
+    3: "Arabian night : se met brusquement à parler arabe sans s’en rendre compte.",
+    4: "Le laboratoire : la porte de la villa des Limbes ouvre un instant sur le laboratoire d’un alchimiste.",
+    5: "Iblis : se réveille au milieu d’un cercle et trace en arabe une phrase tirée de la sourate d’Iblis.",
+    6: "L’adorateur du Diable : pénètre dans la villa des Limbes et cherche la chambre du Diable."
+  },
+  "roue-fortune": {
+    1: "Contact. Rien de particulier.",
+    2: "Vaudou : rêve d’une cérémonie vaudou, tambours et oufo aux murs blanchis à la chaux.",
+    3: "Black Magic Jazz Band : développe une obsession pour ce groupe et se renseigne sur ses anciens membres.",
+    4: "Bonnie : croit être suivi dans la journée par Bonnie Gottfried.",
+    5: "Le Pendu : cherche à s’emparer de l’arcane du Pendu pendant un trou noir.",
+    6: "La libération : tente de libérer Bonnie de la lame du Pendu par un rituel vaudou."
+  },
+  force: {
+    1: "Contact. Rien de particulier.",
+    2: "Le temple : rêve d’une cérémonie occulte dans le temple des Naassènes.",
+    3: "Incantations : entend des formules rituelles familières liées aux cérémonies des Naassènes.",
+    4: "Une nouvelle carte : une carte du tarot prend brièvement l’apparence d’un honneur du temple.",
+    5: "La cérémonie, c’est ici ? : reprend conscience juste avant d’entrer dans la boutique Serpents et échelles.",
+    6: "Dans le rang : rejoint immédiatement la propriétaire de Serpents et échelles, Hans Varg et ses sbires."
+  },
+  "sans-nom": {
+    1: "Contact. Rien de particulier.",
+    2: "Prison : rêve des couloirs d’une prison et découvre ses poings couverts de sang.",
+    3: "Sprechen Sie Deutsch ? : se met à parler allemand brutalement.",
+    4: "Dernière rencontre : hallucination d’un prisonnier amaigri qui lui reproche de revenir le tourmenter.",
+    5: "Doom Art : reprend conscience dans la galerie Doom Art en discutant en allemand avec Maxime von Grave.",
+    6: "Laëmmle et Varg : cherche aussitôt à s’allier à Hans Varg et à ses partisans."
+  },
+  temperance: {
+    1: "Contact. Rien de particulier.",
+    2: "Hôpital : rêve récurrent où il déambule d’une chambre à l’autre comme un membre du personnel.",
+    3: "Une voix dans la nuit : se réveille en psalmodiant une invocation au maître des esclandres.",
+    4: "L’abbé : croit être suivi par un ecclésiastique en soutane qui disparaît dès qu’il l’approche.",
+    5: "J’ai péché : reprend conscience dans un confessionnal, persuadé qu’une présence l’écoute derrière la grille.",
+    6: "À la recherche du maître : cherche l’abbé Dècre et sent que l’arcane du Pape se trouve dans la villa des Limbes."
+  },
+  "maison-dieu": {
+    1: "Contact. Rien de particulier.",
+    2: "Enfermé : rêve d’être coincé dans un espace minuscule, peut-être un cercueil.",
+    3: "Clés, grilles et portes : entend pendant des heures serrures, grilles et claquements métalliques.",
+    4: "Coups de poing : assiste à une bagarre nocturne et reçoit l’ordre de servir Gabriel d’Offémont sous l’apparence du Roi de Deniers.",
+    5: "Agression : reprend conscience dans la rue, tuméfié et couvert de sang, après une nuit perdue.",
+    6: "Un nouveau patron : tente de reprendre contact avec Gabriel d’Offémont à Saint-Crépin-aux-Bois et rejoint les Ullmann."
+  },
+  etoile: {
+    1: "Contact. Rien de particulier.",
+    2: "Miroir, mon beau miroir : rêve d’une galerie de miroirs et y voit le reflet d’une femme blonde inconnue.",
+    3: "Cris d’enfants : entend des enfants l’appeler ou se disputer dans une pièce voisine.",
+    4: "La comtesse sanglante : s’invente soudain des liens entre l’enquête en cours et Élisabeth Báthory.",
+    5: "Serpents et échelles : conduit son corps d’emprunt à la boutique pour y retrouver le Cercle des Naassènes et d’autres âmes liées aux arcanes.",
+    6: "Un autre corps ? : commence par se scarifier puis envisage le suicide pour quitter ce corps jugé indigne."
+  },
+  lune: {
+    1: "Contact. Rien de particulier.",
+    2: "Le rêve de Marie Bonnano : refait les mêmes rêves que Marie Bonnano autour de la ferme et du puits en Sologne.",
+    3: "Docteur Freud : gagne +3 en Psychologie, jusqu’à un maximum de 10, tant que l’influence dure.",
+    4: "La possédée : vision brève d’une adolescente sanglée sur son lit, hurlant à s’en arracher la gorge.",
+    5: "Vers la Sologne : tente de rejoindre la propriété de Sologne et reprend conscience en route vers Neung-sur-Beuvron.",
+    6: "En Sologne : rejoint la ferme de Sologne pour faire le point, au risque d’un affrontement avec Christophe Holmais."
+  },
+  soleil: {
+    1: "Contact. Rien de particulier.",
+    2: "Dear Aleister : rêve d’un entretien en bord de mer avec Aleister Crowley, entouré de dessins et de cartes.",
+    3: "L’alchimiste : développe une passion pour l’alchimie, rassemble des ouvrages occultes et se réjouit à Serpents et échelles.",
+    4: "Le manuscrit : trouve chez lui un manuscrit néerlandais de L’Œuvre au rouge écrit de sa propre main.",
+    5: "Un appel dans la nuit : se réveille en pleine conversation avec Fiona Noor, convaincue d’échanger avec Hermanus revenu des morts.",
+    6: "La famille Noor : rejoint Fiona à Serpents et échelles pour reprendre sa place au sein du Cercle des Naassènes."
+  },
+  jugement: {
+    1: "Contact. Rien de particulier.",
+    2: "Une main gantée : rêve d’un tirage de tarot face à une cartomancienne gantée de noir aux bracelets étincelants.",
+    3: "La fête : entend une fête des années 1930 chez les voisins et des voix qui l’invitent à rejoindre Charles.",
+    4: "Sépia : revit la scène de la photo retrouvée chez Vincent Fichet, aux côtés de Kurt Laëmmle.",
+    5: "Que s’est-il passé ? : erre, persuadé d’avoir perdu mémoire et raison, puis finit dans un hôpital.",
+    6: "Hérodiade : se rend à Saint-Crépin-aux-Bois et tente de pénétrer dans le parc de la villa Hérodiade."
+  }
+};
+
+const POSSESSION_SCALE_ALIASES = {
+  "romuald pon": "papesse",
+  "alexandre lomax": "empereur",
+  "basilis": "amoureux",
+  "andre mallet": "chariot",
+  "andre malet": "chariot",
+  "claude barnard": "justice",
+  "jean marie belami": "ermite",
+  "loubens ligonde": "roue-fortune",
+  "edouard brochant": "force",
+  "kurt laemmle": "sans-nom",
+  "eva longchamp": "temperance",
+  "jean talmont": "maison-dieu",
+  "viviane carol bussac": "etoile",
+  "anne holmais": "lune",
+  "hermanus noor": "soleil",
+  "charles moritz": "jugement",
+  "bonnie gottfried": "pendu",
+  "bernadette meffret": "imperatrice",
+  "jean baptiste decre": "pape",
+  "marco ottaviani": "monde",
+  "satan": "diable"
+};
+
+function resolvePossessionScaleArcaneId(itemOrArcaneId, sataniste = "") {
+  const directArcaneId = typeof itemOrArcaneId === "string"
+    ? itemOrArcaneId
+    : (itemOrArcaneId?.system?.arcaneId ?? itemOrArcaneId?.arcaneId ?? "");
+  if (directArcaneId && (POSSESSION_SCALES_BY_ARCANE[directArcaneId] || ARCANA_BY_ID.has(directArcaneId))) {
+    return directArcaneId;
+  }
+  const satanisteName = normalizeText(sataniste || itemOrArcaneId?.system?.sataniste || itemOrArcaneId?.sataniste || "");
+  return POSSESSION_SCALE_ALIASES[satanisteName] || directArcaneId || "";
+}
+
+function getFallbackPossessionEffect(arcaneId, level = 0) {
+  if (level <= 0) return POSSESSION_EFFECTS[0];
+  if (arcaneId === "imperatrice") {
+    return level === 1
+      ? "Contact. Rien de particulier."
+      : "Aucune échelle de possession dans le livre : Bernadette Meffret possède déjà un PNJ.";
+  }
+  if (arcaneId === "pape") {
+    return level === 1
+      ? "Contact. Rien de particulier."
+      : "Aucune échelle de possession dans le livre : les PJ ne peuvent normalement pas obtenir cette carte avant la fin de la campagne.";
+  }
+  if (arcaneId === "pendu") {
+    if (level === 1) return "Contact. Rien de particulier.";
+    if (level < 6) return "Arcane particulièrement dangereux : la folie de Bonnie Gottfried imprègne le porteur. Le livre ne donne pas d’échelle standard de possession pour cet arcane.";
+    return "Pas de possession standard : l’esprit de Bonnie Gottfried ne peut pas posséder un PJ à la manière des autres satanistes.";
+  }
+  if (arcaneId === "monde") {
+    return level === 1
+      ? "Contact. Rien de particulier."
+      : "Aucune échelle de possession dans le livre : les PJ ne peuvent normalement pas obtenir cette carte avant la fin de la campagne.";
+  }
+  if (arcaneId === "diable") {
+    return "Arcane de fin de campagne : possession et effets à gérer manuellement par le MJ.";
+  }
+  if (arcaneId === "mat" || arcaneId === "bateleur") {
+    return level === 1
+      ? "Contact. Rien de particulier."
+      : "Pas d’échelle de possession dédiée dans le livre de base pour cet arcane.";
+  }
+  return POSSESSION_EFFECTS[Math.min(6, Math.max(1, Number(level) || 1))] || POSSESSION_EFFECTS[6];
+}
+
+function getPossessionEffectForArcane(itemOrArcaneId, level = 0, sataniste = "") {
+  const numericLevel = Math.max(0, Math.min(6, Number(level) || 0));
+  if (numericLevel <= 0) return POSSESSION_EFFECTS[0];
+  const arcaneId = resolvePossessionScaleArcaneId(itemOrArcaneId, sataniste);
+  const scale = POSSESSION_SCALES_BY_ARCANE[arcaneId];
+  if (scale?.[numericLevel]) return scale[numericLevel];
+  return getFallbackPossessionEffect(arcaneId, numericLevel);
+}
+
+
+function getPersistedPossessionState(itemOrArcaneLike) {
+  const flags = itemOrArcaneLike?.getFlag?.("arcane15", "possession")
+    ?? itemOrArcaneLike?.flags?.arcane15?.possession
+    ?? itemOrArcaneLike?._source?.flags?.arcane15?.possession
+    ?? {};
+  const system = itemOrArcaneLike?.system ?? itemOrArcaneLike?._source?.system ?? {};
+  const arcaneId = String(flags.arcaneId ?? system.arcaneId ?? itemOrArcaneLike?.arcaneId ?? "");
+  const def = ARCANA_BY_ID.get(arcaneId) ?? {};
+  const sataniste = String(flags.sataniste ?? system.sataniste ?? itemOrArcaneLike?.sataniste ?? def.sataniste ?? "");
+  const rawLevel = flags.level ?? flags.possessionLevel ?? system.possessionLevel ?? itemOrArcaneLike?.possessionLevel ?? 0;
+  const possessionLevel = Math.max(0, Math.min(6, Number(rawLevel) || 0));
+  const computedEffect = getPossessionEffectForArcane(arcaneId || itemOrArcaneLike, possessionLevel, sataniste);
+  const possessionEffect = String(flags.effect ?? flags.possessionEffect ?? system.possessionEffect ?? itemOrArcaneLike?.possessionEffect ?? computedEffect ?? "");
+  return { arcaneId, sataniste, possessionLevel, possessionEffect, computedEffect };
+}
+
+function getStoredPossessionStartedAt(itemOrArcaneLike) {
+  const raw = itemOrArcaneLike?.getFlag?.("arcane15", "possession")?.startedAt
+    ?? itemOrArcaneLike?.flags?.arcane15?.possession?.startedAt
+    ?? itemOrArcaneLike?._source?.flags?.arcane15?.possession?.startedAt
+    ?? 0;
+  const value = Number(raw) || 0;
+  return value > 0 ? value : 0;
+}
+
+function getPossessionStartedAt(itemOrArcaneLike, { preferNow = false } = {}) {
+  const stored = getStoredPossessionStartedAt(itemOrArcaneLike);
+  if (stored > 0) return stored;
+
+  const candidates = [
+    itemOrArcaneLike?.system?.lastHeroicAt,
+    itemOrArcaneLike?._source?.system?.lastHeroicAt,
+    itemOrArcaneLike?._stats?.modifiedTime,
+    itemOrArcaneLike?._source?._stats?.modifiedTime,
+    itemOrArcaneLike?.parent?._stats?.modifiedTime,
+    itemOrArcaneLike?.actor?._stats?.modifiedTime
+  ];
+
+  for (const candidate of candidates) {
+    const numeric = Number(candidate) || 0;
+    if (numeric > 0) return numeric;
+  }
+
+  return preferNow ? Date.now() : 0;
+}
+
+function getChangedPossessionLevel(changed, fallbackLevel = 0) {
+  const flagLevel = foundry.utils.getProperty(changed, "flags.arcane15.possession.level");
+  const flagAlt = foundry.utils.getProperty(changed, "flags.arcane15.possession.possessionLevel");
+  const systemLevel = foundry.utils.getProperty(changed, "system.possessionLevel");
+  const raw = flagLevel ?? flagAlt ?? systemLevel;
+  if (raw === undefined) return Math.max(0, Math.min(6, Number(fallbackLevel) || 0));
+  return Math.max(0, Math.min(6, Number(raw) || 0));
+}
+
+function buildPossessionPersistenceUpdate(itemOrArcaneLike, level, sataniste = undefined) {
+  const current = getPersistedPossessionState(itemOrArcaneLike);
+  const arcaneId = String(current.arcaneId || itemOrArcaneLike?.system?.arcaneId || itemOrArcaneLike?.arcaneId || "");
+  const def = ARCANA_BY_ID.get(arcaneId) ?? {};
+  const nextSataniste = String(sataniste ?? current.sataniste ?? def.sataniste ?? "");
+  const nextLevel = Math.max(0, Math.min(6, Number(level) || 0));
+  const nextEffect = getPossessionEffectForArcane(arcaneId || itemOrArcaneLike, nextLevel, nextSataniste);
+  return {
+    arcaneId,
+    sataniste: nextSataniste,
+    possessionLevel: nextLevel,
+    possessionEffect: nextEffect,
+    updateData: {
+      "flags.arcane15.possession.arcaneId": arcaneId,
+      "flags.arcane15.possession.sataniste": nextSataniste,
+      "flags.arcane15.possession.level": nextLevel,
+      "flags.arcane15.possession.effect": nextEffect,
+      "system.possessionLevel": nextLevel,
+      "system.possessionEffect": nextEffect,
+      "system.sataniste": nextSataniste
+    }
+  };
+}
+
 const ARCANA_NAME_ALIASES = {
   "le mat": "mat",
   "mat": "mat",
@@ -243,23 +524,83 @@ function uniq(arr) {
   return [...new Set(arr.filter(Boolean))];
 }
 
+function axvPossessionLog(scope, message, data) {
+  try {
+    const prefix = `[ARCANE XV][POSSESSION][${scope}] ${message}`;
+    if (data === undefined) console.log(prefix);
+    else console.log(prefix, data);
+  } catch (_err) {}
+}
+
+function axvPossessionSnapshot(item) {
+  if (!item) return null;
+  const state = getPersistedPossessionState(item);
+  const startedAt = getStoredPossessionStartedAt(item);
+  const modifiedAt = Number(item?._stats?.modifiedTime ?? item?._source?._stats?.modifiedTime ?? 0) || 0;
+  return {
+    actor: item.actor?.name ?? item.parent?.name ?? null,
+    actorId: item.actor?.id ?? item.parent?.id ?? null,
+    item: item.name ?? null,
+    itemId: item.id ?? null,
+    arcaneId: state.arcaneId,
+    sataniste: state.sataniste,
+    palier: state.possessionLevel,
+    effet: state.possessionEffect,
+    startedAt,
+    startedAtIso: startedAt > 0 ? new Date(startedAt).toISOString() : null,
+    modifiedAt,
+    modifiedAtIso: modifiedAt > 0 ? new Date(modifiedAt).toISOString() : null,
+    systemLevel: Number(item.system?.possessionLevel ?? 0) || 0,
+    flagLevel: Number(item.flags?.arcane15?.possession?.level ?? item.flags?.arcane15?.possession?.possessionLevel ?? 0) || 0
+  };
+}
+
 export class ArcanaManager {
   static #bannerNode = null;
+  static #possessionTrackerApp = null;
+  static #possessionTrackerOpenStamp = 0;
+  static #syncingPossessionEffectItems = new Set();
 
   static init() {
     Hooks.on("getSceneControlButtons", controls => ArcanaManager.injectSceneControl(controls));
-    Hooks.on("createItem", (item) => {
+    Hooks.on("preUpdateItem", (item, changed, options = {}) => {
       if (item?.type !== "atoutArcane" || !(item?.actor ?? item?.parent)) return;
+      axvPossessionLog("HOOK:preUpdateItem", "préparation mise à jour", {
+        before: axvPossessionSnapshot(item),
+        changed: foundry.utils.deepClone(changed)
+      });
+      ArcanaManager.preparePossessionTrackingUpdate(item, changed, options);
+      axvPossessionLog("HOOK:preUpdateItem", "changed après préparation", {
+        actor: item.actor?.name ?? item.parent?.name ?? null,
+        item: item.name ?? null,
+        changed: foundry.utils.deepClone(changed),
+        options: {
+          axvPreviousPossessionLevel: options.axvPreviousPossessionLevel,
+          axvPreviousPossessionStartedAt: options.axvPreviousPossessionStartedAt
+        }
+      });
+    });
+    Hooks.on("createItem", (item, _data, options = {}) => {
+      if (item?.type !== "atoutArcane" || !(item?.actor ?? item?.parent)) return;
+      axvPossessionLog("HOOK:createItem", "item créé", { snapshot: axvPossessionSnapshot(item), options });
+      void ArcanaManager.ensureItemPossessionEffectUpToDate(item, options);
       ArcanaManager.syncPassiveActorBonuses(item);
       ArcanaManager.refreshUIForActor(item?.actor ?? item?.parent ?? null);
     });
-    Hooks.on("updateItem", (item) => {
+    Hooks.on("updateItem", (item, _changed, options = {}) => {
       if (item?.type !== "atoutArcane" || !(item?.actor ?? item?.parent)) return;
+      axvPossessionLog("HOOK:updateItem", "item mis à jour", {
+        snapshot: axvPossessionSnapshot(item),
+        changed: foundry.utils.deepClone(_changed),
+        options
+      });
+      if (!options?.axvSkipPossessionEffectSync) void ArcanaManager.ensureItemPossessionEffectUpToDate(item, options);
       ArcanaManager.syncPassiveActorBonuses(item);
       ArcanaManager.refreshUIForActor(item?.actor ?? item?.parent ?? null);
     });
     Hooks.on("deleteItem", (item) => {
       if (item?.type !== "atoutArcane" || !(item?.actor ?? item?.parent)) return;
+      axvPossessionLog("HOOK:deleteItem", "item supprimé", { snapshot: axvPossessionSnapshot(item) });
       ArcanaManager.syncPassiveActorBonuses(item);
       ArcanaManager.refreshUIForActor(item?.actor ?? item?.parent ?? null);
     });
@@ -283,7 +624,12 @@ export class ArcanaManager {
     await ArcanaManager.ensureWorldArcanaItems();
     await ArcanaManager.seedLegacyArcanaOnActors();
     for (const actor of game.actors ?? []) {
-      if (actor.type === "personnage") await ArcanaManager.syncPassiveActorBonuses(actor);
+      if (actor.type !== "personnage") continue;
+      await ArcanaManager.syncPassiveActorBonuses(actor);
+      for (const item of actor.items.filter(i => i.type === "atoutArcane")) {
+        await ArcanaManager.ensureItemPossessionEffectUpToDate(item);
+        axvPossessionLog("READY", "état possession après synchronisation", axvPossessionSnapshot(item));
+      }
     }
     ArcanaManager.#ensureBannerNode();
     ArcanaManager.renderPublicBanner();
@@ -324,8 +670,8 @@ export class ArcanaManager {
           linked: i.system?.linked !== false,
           currentEffect: i.system?.currentEffect || def.currentEffect || "",
           heroicEffect: i.system?.heroicEffect || def.heroicEffect || "",
-          sataniste: i.system?.sataniste || def.sataniste || "",
-          possessionLevel: Number(i.system?.possessionLevel ?? 0),
+          sataniste: getPersistedPossessionState(i).sataniste || def.sataniste || "",
+          possessionLevel: getPersistedPossessionState(i).possessionLevel,
           heroicCost: Number(i.system?.heroicCost ?? 1),
           automationSummary: ARCANA_AUTOMATION_LABELS[i.system?.arcaneId] || "Automatisation partielle.",
           statusBadges: ArcanaManager.getArcanaStatusBadges(actor, i)
@@ -434,9 +780,346 @@ export class ArcanaManager {
     if (previousDmg !== nextDmg) await actor.setFlag("arcane15", "arcaneDamageBonus", nextDmg);
   }
 
-  static refreshUIForActor(_source) {
-    queueMicrotask(() => ArcanaManager.renderPublicBanner());
-    setTimeout(() => ArcanaManager.renderPublicBanner(), 25);
+  static preparePossessionTrackingUpdate(item, changed, options = {}) {
+    if (!item || item.type !== "atoutArcane") return;
+
+    const previousState = getPersistedPossessionState(item);
+    const previousLevel = previousState.possessionLevel;
+    const nextLevel = getChangedPossessionLevel(changed, previousLevel);
+    const currentStartedAt = getPossessionStartedAt(item, { preferNow: false });
+    const explicitStartedAt = foundry.utils.getProperty(changed, "flags.arcane15.possession.startedAt");
+
+    options.axvPreviousPossessionLevel = previousLevel;
+    options.axvPreviousPossessionStartedAt = currentStartedAt;
+
+    axvPossessionLog("PREPARE", "transition détectée", {
+      actor: item.actor?.name ?? item.parent?.name ?? null,
+      item: item.name ?? null,
+      previousLevel,
+      nextLevel,
+      currentStartedAt,
+      explicitStartedAt,
+      previousState
+    });
+
+    if (explicitStartedAt !== undefined) {
+      axvPossessionLog("PREPARE", "startedAt explicite conservé", {
+        actor: item.actor?.name ?? item.parent?.name ?? null,
+        item: item.name ?? null,
+        explicitStartedAt
+      });
+      return;
+    }
+
+    if (previousLevel <= 0 && nextLevel > 0) {
+      const ts = Date.now();
+      foundry.utils.setProperty(changed, "flags.arcane15.possession.startedAt", ts);
+      axvPossessionLog("PREPARE", "nouvelle possession détectée", {
+        actor: item.actor?.name ?? item.parent?.name ?? null,
+        item: item.name ?? null,
+        startedAt: ts,
+        startedAtIso: new Date(ts).toISOString()
+      });
+      return;
+    }
+
+    if (previousLevel > 0 && nextLevel > 0) {
+      if (currentStartedAt > 0) {
+        foundry.utils.setProperty(changed, "flags.arcane15.possession.startedAt", currentStartedAt);
+        axvPossessionLog("PREPARE", "possession déjà active, startedAt conservé", {
+          actor: item.actor?.name ?? item.parent?.name ?? null,
+          item: item.name ?? null,
+          startedAt: currentStartedAt,
+          startedAtIso: new Date(currentStartedAt).toISOString()
+        });
+      }
+      return;
+    }
+
+    if (previousLevel > 0 && nextLevel <= 0) {
+      foundry.utils.setProperty(changed, "flags.arcane15.possession.startedAt", 0);
+      axvPossessionLog("PREPARE", "fin de possession détectée", {
+        actor: item.actor?.name ?? item.parent?.name ?? null,
+        item: item.name ?? null
+      });
+    }
+  }
+
+  static async ensureItemPossessionEffectUpToDate(item, options = {}) {
+    if (!item || item.type !== "atoutArcane") return false;
+    if (options?.axvSkipPossessionEffectSync) {
+      axvPossessionLog("SYNC", "sync ignorée par option", { snapshot: axvPossessionSnapshot(item), options });
+      return false;
+    }
+
+    const syncKey = item.uuid ?? item.id ?? foundry.utils.randomID();
+    if (ArcanaManager.#syncingPossessionEffectItems.has(syncKey)) {
+      axvPossessionLog("SYNC", "sync ignorée car déjà en cours", { snapshot: axvPossessionSnapshot(item) });
+      return false;
+    }
+
+    const persisted = getPersistedPossessionState(item);
+    const next = buildPossessionPersistenceUpdate(item, persisted.possessionLevel, persisted.sataniste);
+    const updates = {};
+    const currentFlag = item.getFlag?.("arcane15", "possession") ?? item.flags?.arcane15?.possession ?? {};
+    const currentStartedAt = Number(currentFlag?.startedAt ?? 0) || 0;
+    const resolvedStartedAt = next.possessionLevel > 0 ? getPossessionStartedAt(item, { preferNow: true }) : 0;
+
+    if (String(item.system?.sataniste ?? "") !== String(next.sataniste ?? "")) updates["system.sataniste"] = next.sataniste;
+    if (Number(item.system?.possessionLevel ?? 0) !== Number(next.possessionLevel ?? 0)) updates["system.possessionLevel"] = next.possessionLevel;
+    if (String(item.system?.possessionEffect ?? "") !== String(next.possessionEffect ?? "")) updates["system.possessionEffect"] = next.possessionEffect;
+    if (String(currentFlag?.arcaneId ?? "") !== String(next.arcaneId ?? "")) updates["flags.arcane15.possession.arcaneId"] = next.arcaneId;
+    if (String(currentFlag?.sataniste ?? "") !== String(next.sataniste ?? "")) updates["flags.arcane15.possession.sataniste"] = next.sataniste;
+    if (Number(currentFlag?.level ?? currentFlag?.possessionLevel ?? 0) !== Number(next.possessionLevel ?? 0)) updates["flags.arcane15.possession.level"] = next.possessionLevel;
+    if (String(currentFlag?.effect ?? currentFlag?.possessionEffect ?? "") !== String(next.possessionEffect ?? "")) updates["flags.arcane15.possession.effect"] = next.possessionEffect;
+    if (currentStartedAt !== resolvedStartedAt) updates["flags.arcane15.possession.startedAt"] = resolvedStartedAt;
+
+    axvPossessionLog("SYNC", "comparaison état courant / état voulu", {
+      before: axvPossessionSnapshot(item),
+      target: next,
+      resolvedStartedAt,
+      updates
+    });
+
+    if (!Object.keys(updates).length) {
+      axvPossessionLog("SYNC", "aucune mise à jour nécessaire", { snapshot: axvPossessionSnapshot(item) });
+      return false;
+    }
+
+    ArcanaManager.#syncingPossessionEffectItems.add(syncKey);
+    try {
+      axvPossessionLog("SYNC", "application de la synchronisation", {
+        actor: item.actor?.name ?? item.parent?.name ?? null,
+        item: item.name ?? null,
+        updates
+      });
+      await item.update(updates, { axvSkipPossessionEffectSync: true });
+      axvPossessionLog("SYNC", "synchronisation appliquée", { snapshot: axvPossessionSnapshot(item) });
+      return true;
+    } catch (err) {
+      console.warn("[ARCANE XV][POSSESSION] impossible de synchroniser l'effet de possession", err);
+      return false;
+    } finally {
+      ArcanaManager.#syncingPossessionEffectItems.delete(syncKey);
+    }
+  }
+
+  static #refreshRenderedActorSheets(actor) {
+    if (!actor) return;
+
+    const actorId = actor?.id ?? null;
+    const actorName = normalizeText(actor?.name ?? "");
+    const trackingKey = ArcanaManager.#getPossessionTrackingKey(actor);
+
+    try {
+      if (actor.sheet?.rendered) actor.sheet.render(false);
+    } catch (_err) {}
+
+    for (const app of Object.values(ui.windows ?? {})) {
+      try {
+        const doc = app?.document ?? app?.object ?? null;
+        if (!doc) continue;
+        const docActor = doc?.actor ?? doc?.parent ?? doc;
+        const docId = docActor?.id ?? doc?.id ?? null;
+        const docName = normalizeText(docActor?.name ?? doc?.name ?? "");
+        const docTrackingKey = ArcanaManager.#getPossessionTrackingKey(docActor);
+        const sameActor = (docId && actorId && docId === actorId)
+          || (docTrackingKey && trackingKey && docTrackingKey === trackingKey)
+          || (docName && actorName && docName === actorName);
+        if (!sameActor) continue;
+        if (typeof app.render === "function") app.render(false);
+      } catch (_err) {}
+    }
+  }
+
+  static #getPossessionTrackerRows() {
+    const trackedActors = ArcanaManager.#getPossessionTrackedActors();
+    const grouped = new Map();
+
+    const sortRows = (a, b) => {
+      const timeA = Number(a.startedAt) || 0;
+      const timeB = Number(b.startedAt) || 0;
+      if (timeB !== timeA) return timeB - timeA;
+      const activityA = Number(a.lastActivityAt) || Number(a.modifiedAt) || 0;
+      const activityB = Number(b.lastActivityAt) || Number(b.modifiedAt) || 0;
+      if (activityB !== activityA) return activityB - activityA;
+      if (b.palier !== a.palier) return b.palier - a.palier;
+      return `${a.actor} ${a.arcane}`.localeCompare(`${b.actor} ${b.arcane}`, "fr", { sensitivity: "base" });
+    };
+
+    for (const actor of trackedActors) {
+      const trackingKey = ArcanaManager.#getPossessionTrackingKey(actor);
+      const activeRows = actor.items
+        .filter(i => i.type === "atoutArcane")
+        .map(item => {
+          const state = getPersistedPossessionState(item);
+          const palier = state.possessionLevel;
+          if (palier <= 0) return null;
+          const effet = getPossessionEffectForArcane(state.arcaneId || item, palier, state.sataniste);
+          const startedAt = getPossessionStartedAt(item, { preferNow: false });
+          const lastActivityAt = Number(item.system?.lastHeroicAt ?? item._source?.system?.lastHeroicAt ?? 0) || 0;
+          const modifiedAt = Number(item._stats?.modifiedTime ?? item._source?._stats?.modifiedTime ?? 0) || 0;
+          return {
+            trackingKey,
+            actorId: actor.id,
+            actorUuid: actor.uuid ?? null,
+            isTokenActor: !!actor.isToken,
+            actor: foundry.utils.escapeHTML(actor.name || ""),
+            arcane: foundry.utils.escapeHTML(item.name || ARCANA_BY_ID.get(state.arcaneId)?.name || ""),
+            sataniste: foundry.utils.escapeHTML(state.sataniste || (ARCANA_BY_ID.get(state.arcaneId)?.sataniste ?? "")),
+            palier,
+            effet: foundry.utils.escapeHTML(effet),
+            startedAt,
+            lastActivityAt,
+            modifiedAt
+          };
+        })
+        .filter(Boolean)
+        .sort(sortRows);
+
+      axvPossessionLog("TRACKER", "candidats pour le suivi", {
+        actor: actor.name,
+        actorId: actor.id,
+        actorUuid: actor.uuid ?? null,
+        isTokenActor: !!actor.isToken,
+        trackingKey,
+        candidates: activeRows.map(r => ({
+          actor: r.actor,
+          arcane: r.arcane,
+          palier: r.palier,
+          startedAt: r.startedAt,
+          startedAtIso: r.startedAt ? new Date(r.startedAt).toISOString() : null,
+          lastActivityAt: r.lastActivityAt,
+          modifiedAt: r.modifiedAt
+        }))
+      });
+
+      if (!grouped.has(trackingKey)) grouped.set(trackingKey, []);
+      grouped.get(trackingKey).push(...activeRows);
+    }
+
+    const rows = [...grouped.entries()]
+      .map(([trackingKey, candidates]) => {
+        const sorted = [...candidates].sort(sortRows);
+        const chosen = sorted[0] ?? null;
+        axvPossessionLog("TRACKER", "choix final pour le personnage", {
+          trackingKey,
+          candidates: sorted.map(r => ({
+            actor: r.actor,
+            actorId: r.actorId,
+            actorUuid: r.actorUuid,
+            isTokenActor: r.isTokenActor,
+            arcane: r.arcane,
+            palier: r.palier,
+            startedAt: r.startedAt,
+            startedAtIso: r.startedAt ? new Date(r.startedAt).toISOString() : null,
+            lastActivityAt: r.lastActivityAt,
+            modifiedAt: r.modifiedAt
+          })),
+          chosen
+        });
+        return chosen;
+      })
+      .filter(Boolean)
+      .sort(sortRows);
+
+    axvPossessionLog("TRACKER", "lignes finales du suivi", {
+      trackedActorCount: trackedActors.length,
+      uniqueCharacterCount: grouped.size,
+      rows: rows.map(r => ({
+        actor: r.actor,
+        arcane: r.arcane,
+        palier: r.palier,
+        startedAt: r.startedAt,
+        startedAtIso: r.startedAt ? new Date(r.startedAt).toISOString() : null,
+        effet: r.effet,
+        actorId: r.actorId,
+        actorUuid: r.actorUuid,
+        isTokenActor: r.isTokenActor,
+        trackingKey: r.trackingKey
+      }))
+    });
+    return { trackedActors, rows };
+  }
+
+  static #getApplicationElement(app) {
+    const el = app?.element ?? null;
+    if (!el) return null;
+    if (el instanceof HTMLElement) return el;
+    if (Array.isArray(el)) return el[0] ?? null;
+    if (el?.jquery) return el[0] ?? null;
+    if (typeof el.get === "function") return el.get(0) ?? null;
+    return null;
+  }
+
+  static refreshPossessionTracker() {
+    const app = ArcanaManager.#possessionTrackerApp;
+    if (!app || app?.closing || !app?.rendered) return;
+
+    const { trackedActors, rows } = ArcanaManager.#getPossessionTrackerRows();
+    axvPossessionLog("TRACKER", "rafraîchissement fenêtre", { trackedActors: trackedActors.length, rows });
+    const content = ArcanaManager.#buildPossessionTrackerContent(rows, trackedActors.length);
+    const root = ArcanaManager.#getApplicationElement(app);
+    const host = root?.querySelector?.(".window-content") ?? null;
+
+    if (host) {
+      host.innerHTML = content;
+      return;
+    }
+
+    try {
+      app.render(true);
+    } catch (_err) {}
+  }
+
+  static refreshUIForActor(source) {
+    const actor = source?.actor ?? source?.parent ?? source ?? null;
+    const relatedActors = new Map();
+    const addRelated = candidate => {
+      if (!candidate) return;
+      const key = String(candidate.uuid ?? candidate.id ?? "").trim() || `rel:${relatedActors.size}`;
+      if (relatedActors.has(key)) return;
+      relatedActors.set(key, candidate);
+    };
+    addRelated(actor);
+    const actorNameKey = normalizeText(actor?.name ?? "");
+    const trackingKey = actor ? ArcanaManager.#getPossessionTrackingKey(actor) : "";
+    for (const candidate of (game.actors?.contents ?? [])) {
+      if (!candidate) continue;
+      const sameTrackingKey = trackingKey && ArcanaManager.#getPossessionTrackingKey(candidate) === trackingKey;
+      const sameName = actorNameKey && normalizeText(candidate.name ?? "") === actorNameKey;
+      if (sameTrackingKey || sameName) addRelated(candidate);
+    }
+    for (const token of (canvas?.tokens?.placeables ?? [])) {
+      const candidate = token?.actor ?? null;
+      if (!candidate) continue;
+      const sameTrackingKey = trackingKey && ArcanaManager.#getPossessionTrackingKey(candidate) === trackingKey;
+      const sameName = actorNameKey && normalizeText(candidate.name ?? "") === actorNameKey;
+      if (sameTrackingKey || sameName) addRelated(candidate);
+    }
+
+    axvPossessionLog("UI", "rafraîchissement UI acteur", {
+      actor: actor?.name ?? null,
+      actorId: actor?.id ?? null,
+      trackingKey,
+      relatedActors: [...relatedActors.values()].map(a => ({
+        actor: a?.name ?? null,
+        actorId: a?.id ?? null,
+        actorUuid: a?.uuid ?? null,
+        isTokenActor: !!a?.isToken,
+        trackingKey: ArcanaManager.#getPossessionTrackingKey(a),
+        activeArcana: a?.items?.filter?.(i => i.type === "atoutArcane").map(i => axvPossessionSnapshot(i)) ?? []
+      }))
+    });
+    queueMicrotask(() => {
+      ArcanaManager.renderPublicBanner();
+      ArcanaManager.refreshPossessionTracker();
+      for (const candidate of relatedActors.values()) ArcanaManager.#refreshRenderedActorSheets(candidate);
+    });
+    setTimeout(() => {
+      ArcanaManager.renderPublicBanner();
+      ArcanaManager.refreshPossessionTracker();
+    }, 25);
   }
 
   static bindSheet(sheet) {
@@ -536,12 +1219,19 @@ export class ArcanaManager {
         heroicCost: def.heroicCost,
         sataniste: def.sataniste,
         possessionLevel: 0,
-        possessionEffect: POSSESSION_EFFECTS[0],
+        possessionEffect: getPossessionEffectForArcane(def.arcaneId, 0, def.sataniste),
         lastHeroicAt: 0,
         notes: ""
       };
+      const possessionFlags = {
+        arcaneId: def.arcaneId,
+        sataniste: def.sataniste,
+        level: 0,
+        effect: getPossessionEffectForArcane(def.arcaneId, 0, def.sataniste),
+        startedAt: 0
+      };
       if (!item) {
-        toCreate.push({ name: def.name, type: "atoutArcane", img: def.img, folder: folder?.id ?? null, system: systemData });
+        toCreate.push({ name: def.name, type: "atoutArcane", img: def.img, folder: folder?.id ?? null, system: systemData, flags: { arcane15: { possession: possessionFlags } } });
         continue;
       }
       const updates = {};
@@ -551,6 +1241,7 @@ export class ArcanaManager {
       for (const [k, v] of Object.entries(systemData)) {
         if (JSON.stringify(item.system?.[k]) !== JSON.stringify(v)) updates[`system.${k}`] = v;
       }
+      if (JSON.stringify(item.flags?.arcane15?.possession ?? null) !== JSON.stringify(possessionFlags)) updates["flags.arcane15.possession"] = possessionFlags;
       if (Object.keys(updates).length) await item.update(updates);
     }
 
@@ -604,6 +1295,8 @@ export class ArcanaManager {
       return;
     }
     const def = ARCANA_BY_ID.get(arcaneId) || {};
+    const createSataniste = source.system?.sataniste ?? def.sataniste ?? "";
+    const createEffect = getPossessionEffectForArcane(arcaneId, 0, createSataniste);
     const createData = {
       name: source.name || def.name || "Arcane majeur",
       type: "atoutArcane",
@@ -617,11 +1310,22 @@ export class ArcanaManager {
         currentEffect: source.system?.currentEffect ?? def.currentEffect ?? "",
         heroicEffect: source.system?.heroicEffect ?? def.heroicEffect ?? "",
         heroicCost: Number(source.system?.heroicCost ?? def.heroicCost ?? 1),
-        sataniste: source.system?.sataniste ?? def.sataniste ?? "",
+        sataniste: createSataniste,
         possessionLevel: 0,
-        possessionEffect: POSSESSION_EFFECTS[0],
+        possessionEffect: createEffect,
         lastHeroicAt: 0,
         notes: source.system?.notes ?? ""
+      },
+      flags: {
+        arcane15: {
+          possession: {
+            arcaneId,
+            sataniste: createSataniste,
+            level: 0,
+            effect: createEffect,
+            startedAt: 0
+          }
+        }
       }
     };
     await actor.createEmbeddedDocuments("Item", [createData]);
@@ -1061,41 +1765,104 @@ export class ArcanaManager {
   }
 
   static async increasePossession(actor, item) {
-    const current = Number(item.system?.possessionLevel ?? 0);
-    const next = Math.min(6, current + 1);
-    const effect = POSSESSION_EFFECTS[next] ?? POSSESSION_EFFECTS[6];
-    await item.update({
-      "system.possessionLevel": next,
-      "system.possessionEffect": effect
+    const currentState = getPersistedPossessionState(item);
+    const next = Math.min(6, Number(currentState.possessionLevel ?? 0) + 1);
+    const persisted = buildPossessionPersistenceUpdate(item, next, currentState.sataniste);
+    axvPossessionLog("INCREASE", "augmentation demandée", {
+      actor: actor?.name ?? null,
+      before: axvPossessionSnapshot(item),
+      nextLevel: next,
+      target: persisted
     });
+    const currentStartedAt = getStoredPossessionStartedAt(item);
+    const nextStartedAt = currentState.possessionLevel <= 0 ? Date.now() : (currentStartedAt || Date.now());
+    const updateData = {
+      ...persisted.updateData,
+      "flags.arcane15.possession.startedAt": nextStartedAt
+    };
+    axvPossessionLog("INCREASE", "updateData appliqué sur l'item", {
+      actor: actor?.name ?? null,
+      item: item?.name ?? null,
+      updateData
+    });
+    await item.update(updateData);
+    axvPossessionLog("INCREASE", "état après item.update", { afterUpdate: axvPossessionSnapshot(item) });
+    await ArcanaManager.ensureItemPossessionEffectUpToDate(item, { axvSkipPossessionEffectSync: true });
+    axvPossessionLog("INCREASE", "état final avant refresh UI", { final: axvPossessionSnapshot(item) });
+    ArcanaManager.refreshUIForActor(actor);
     await ChatMessage.create({
       whisper: gmWhisperIds(),
       speaker: ChatMessage.getSpeaker({ actor }),
       content: `
         <div class="axv-arcana-gm-card">
           <div><strong>Possession</strong> — ${actor.name}</div>
-          <div style="margin-top:6px;"><strong>${item.name}</strong> (${item.system?.sataniste || "sans sataniste"})</div>
-          <div style="margin-top:6px;">Palier atteint : <strong>${next}</strong></div>
-          <div style="margin-top:6px;">Effet : ${effect}</div>
+          <div style="margin-top:6px;"><strong>${item.name}</strong> (${persisted.sataniste || "sans sataniste"})</div>
+          <div style="margin-top:6px;">Palier atteint : <strong>${persisted.possessionLevel}</strong></div>
+          <div style="margin-top:6px;">Effet : ${persisted.possessionEffect}</div>
         </div>`
     });
     ArcanaManager.renderPublicBanner();
   }
 
+  static #getPossessionTrackingKey(actor) {
+    const rawName = String(actor?.name ?? "").trim();
+    const normalizedName = normalizeText(rawName);
+    const ownerIds = Object.entries(actor?.ownership ?? {})
+      .filter(([id, level]) => id !== "default" && Number(level) >= CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER)
+      .map(([id]) => id)
+      .sort();
+    const ownerKey = ownerIds.join(",");
+    const baseId = String(actor?.baseActor?.id ?? actor?.token?.baseActor?.id ?? "").trim();
+    const sourceId = String(actor?.flags?.core?.sourceId ?? actor?._source?.flags?.core?.sourceId ?? "").trim();
+    if (baseId) return `base:${baseId}`;
+    if (sourceId) return `source:${sourceId}`;
+    if (normalizedName && ownerKey) return `name:${normalizedName}::owners:${ownerKey}`;
+    if (normalizedName) return `name:${normalizedName}`;
+    return `id:${String(actor?.id ?? actor?.uuid ?? randomID())}`;
+  }
+
   static #getPossessionTrackedActors() {
-    return (game.actors?.contents ?? [])
-      .filter(actor => actor?.type === "personnage" && actor?.hasPlayerOwner);
+    const docs = [];
+    const seenDocs = new Set();
+    const add = actor => {
+      if (!actor?.type || actor.type !== "personnage" || !actor?.hasPlayerOwner) return;
+      const docKey = String(actor.uuid ?? actor.id ?? "").trim() || `anon:${docs.length}`;
+      if (seenDocs.has(docKey)) return;
+      seenDocs.add(docKey);
+      docs.push(actor);
+    };
+
+    for (const actor of (game.actors?.contents ?? [])) add(actor);
+    for (const token of (canvas?.tokens?.placeables ?? [])) add(token?.actor ?? null);
+
+    axvPossessionLog("TRACKER", "documents acteurs inspectés pour le suivi", {
+      count: docs.length,
+      actors: docs.map(actor => ({
+        name: actor?.name ?? null,
+        actorId: actor?.id ?? null,
+        uuid: actor?.uuid ?? null,
+        isToken: !!actor?.isToken,
+        trackingKey: ArcanaManager.#getPossessionTrackingKey(actor)
+      }))
+    });
+
+    return docs;
   }
 
   static #buildPossessionTrackerContent(rows, actorCount) {
+    const BODY_CELL_STYLE = "color:#241b16 !important; -webkit-text-fill-color:#241b16 !important; text-shadow:none !important;";
+    const BODY_CELL_STYLE_STRONG = "color:#1d1612 !important; -webkit-text-fill-color:#1d1612 !important; text-shadow:none !important; font-weight:700;";
+    const ALERT_CELL_STYLE = "color:#3a1818 !important; -webkit-text-fill-color:#3a1818 !important; text-shadow:none !important;";
+    const EMPTY_STYLE = "color:#2c221d !important; -webkit-text-fill-color:#2c221d !important; text-shadow:none !important;";
+
     const empty = `
-      <div class="axv-possession-empty">
-        Aucun atout d’arcane lié sur les personnages joueurs.
+      <div class="axv-possession-empty" style="${EMPTY_STYLE}">
+        Aucune possession active sur les personnages joueurs.
       </div>`;
 
     const table = `
       <div class="axv-possession-table-wrap">
-        <table class="axv-possession-table">
+        <table class="axv-possession-table" data-axv-possession-table="1">
           <thead>
             <tr>
               <th>Personnage</th>
@@ -1105,20 +1872,34 @@ export class ArcanaManager {
               <th>Effet</th>
             </tr>
           </thead>
-          <tbody>${rows.map(r => `
-            <tr class="${r.palier >= 4 ? "is-alert" : ""}">
-              <td class="axv-possession-col-actor">${r.actor}</td>
-              <td class="axv-possession-col-arcane">${r.arcane}</td>
-              <td class="axv-possession-col-sataniste">${r.sataniste || "—"}</td>
-              <td class="axv-possession-col-palier"><span class="axv-possession-badge">${r.palier}</span></td>
-              <td class="axv-possession-col-effet">${r.effet}</td>
-            </tr>`).join("")}
+          <tbody>${rows.map(r => {
+            const rowClass = r.palier >= 4 ? "is-alert" : "";
+            const rowStyle = r.palier >= 4 ? ALERT_CELL_STYLE : BODY_CELL_STYLE;
+            const strongStyle = r.palier >= 4 ? ALERT_CELL_STYLE : BODY_CELL_STYLE_STRONG;
+            return `
+            <tr class="${rowClass}">
+              <td class="axv-possession-col-actor" style="${strongStyle}"><span style="${strongStyle}">${r.actor}</span></td>
+              <td class="axv-possession-col-arcane" style="${strongStyle}"><span style="${strongStyle}">${r.arcane}</span></td>
+              <td class="axv-possession-col-sataniste" style="${rowStyle}"><span style="${rowStyle}">${r.sataniste || "—"}</span></td>
+              <td class="axv-possession-col-palier" style="${rowStyle}"><span class="axv-possession-badge">${r.palier}</span></td>
+              <td class="axv-possession-col-effet" style="${rowStyle}"><span style="${rowStyle}">${r.effet}</span></td>
+            </tr>`;
+          }).join("")}
           </tbody>
         </table>
       </div>`;
 
     return `
       <style>
+        .axv-possession-shell,
+        .axv-possession-shell *,
+        .axv-possession-shell table,
+        .axv-possession-shell tbody,
+        .axv-possession-shell tr,
+        .axv-possession-shell td,
+        .axv-possession-shell td span {
+          box-sizing: border-box;
+        }
         .axv-possession-shell {
           color: #f4efe6;
           background: linear-gradient(180deg, rgba(34, 20, 14, 0.98) 0%, rgba(19, 12, 10, 0.98) 100%);
@@ -1166,14 +1947,17 @@ export class ArcanaManager {
           background: rgba(116, 12, 32, 0.98) !important;
           border-bottom: 1px solid rgba(214, 182, 120, 0.22);
         }
-        .axv-possession-table tbody tr td,
-        .axv-possession-table tbody tr:nth-child(even) td,
-        .axv-possession-table tbody tr:nth-child(odd) td {
+        .axv-possession-shell .axv-possession-table tbody tr td,
+        .axv-possession-shell .axv-possession-table tbody tr:nth-child(even) td,
+        .axv-possession-shell .axv-possession-table tbody tr:nth-child(odd) td,
+        .axv-possession-shell .axv-possession-table tbody tr td span {
           padding: 11px 12px;
           vertical-align: top;
           font-size: 13px;
           line-height: 1.45;
-          color: #2a211c !important;
+          color: #241b16 !important;
+          -webkit-text-fill-color: #241b16 !important;
+          -webkit-text-fill-color: #241b16 !important;
           background: rgba(255, 252, 248, 0.98) !important;
           border-bottom: 1px solid rgba(214, 182, 120, 0.1);
           overflow-wrap: anywhere;
@@ -1186,22 +1970,30 @@ export class ArcanaManager {
         .axv-possession-table tbody tr:hover td {
           background: rgba(239, 226, 212, 0.98) !important;
         }
-        .axv-possession-table tbody tr.is-alert td {
+        .axv-possession-shell .axv-possession-table tbody tr.is-alert td,
+        .axv-possession-shell .axv-possession-table tbody tr.is-alert td span {
           background: rgba(248, 224, 224, 0.98) !important;
           color: #3a1818 !important;
+          -webkit-text-fill-color: #3a1818 !important;
         }
         .axv-possession-table td *,
-        .axv-possession-table th * {
+        .axv-possession-table th *,
+        .axv-possession-table td span,
+        .axv-possession-table td strong,
+        .axv-possession-table td em {
           color: inherit !important;
+          -webkit-text-fill-color: currentColor !important;
         }
         .axv-possession-col-actor,
         .axv-possession-col-arcane {
           font-weight: 700;
           color: #241b16 !important;
+          -webkit-text-fill-color: #241b16 !important;
         }
         .axv-possession-col-sataniste,
         .axv-possession-col-effet {
           color: #352a24 !important;
+          -webkit-text-fill-color: #352a24 !important;
         }
         .axv-possession-col-palier {
           text-align: center;
@@ -1217,6 +2009,7 @@ export class ArcanaManager {
           border: 1px solid rgba(214, 182, 120, 0.5);
           font-weight: 900;
           color: #2b120d !important;
+          -webkit-text-fill-color: #2b120d !important;
         }
         .axv-possession-empty {
           padding: 18px 16px;
@@ -1224,6 +2017,7 @@ export class ArcanaManager {
           background: rgba(255, 252, 248, 0.98) !important;
           border: 1px dashed rgba(214, 182, 120, 0.28);
           color: #2c221d !important;
+          -webkit-text-fill-color: #2c221d !important;
           text-align: center;
         }
         @media (max-width: 900px) {
@@ -1243,25 +2037,27 @@ export class ArcanaManager {
   static openPossessionTracker() {
     if (!game.user?.isGM) return;
 
-    const trackedActors = ArcanaManager.#getPossessionTrackedActors();
-    const rows = trackedActors
-      .flatMap(actor => actor.items
-        .filter(i => i.type === "atoutArcane")
-        .map(item => ({
-          actor: foundry.utils.escapeHTML(actor.name || ""),
-          arcane: foundry.utils.escapeHTML(item.name || ""),
-          sataniste: foundry.utils.escapeHTML(item.system?.sataniste || ""),
-          palier: Number(item.system?.possessionLevel ?? 0),
-          effet: foundry.utils.escapeHTML(item.system?.possessionEffect || POSSESSION_EFFECTS[0])
-        })))
-      .sort((a, b) => {
-        if (b.palier !== a.palier) return b.palier - a.palier;
-        return `${a.actor} ${a.arcane}`.localeCompare(`${b.actor} ${b.arcane}`, "fr", { sensitivity: "base" });
-      });
+    const now = Date.now();
+    const existing = ArcanaManager.#possessionTrackerApp;
+    if ((now - ArcanaManager.#possessionTrackerOpenStamp) < 250) {
+      if (existing && !existing?.closing && existing?.rendered) {
+        existing.bringToFront?.();
+        existing.maximize?.();
+        return existing;
+      }
+      return existing ?? null;
+    }
+    ArcanaManager.#possessionTrackerOpenStamp = now;
 
+    if (existing && !existing?.closing && existing?.rendered) {
+      existing.bringToFront?.();
+      existing.maximize?.();
+      return existing;
+    }
+
+    const { trackedActors, rows } = ArcanaManager.#getPossessionTrackerRows();
     const content = ArcanaManager.#buildPossessionTrackerContent(rows, trackedActors.length);
-
-    new DialogV2({
+    const app = new DialogV2({
       window: {
         title: "Arcane XV — Suivi de Possession",
         resizable: true
@@ -1272,7 +2068,17 @@ export class ArcanaManager {
       },
       content,
       buttons: [{ action: "close", label: "Fermer", default: true }]
-    }).render({ force: true });
+    });
+
+    const originalClose = app.close.bind(app);
+    app.close = async (...args) => {
+      if (ArcanaManager.#possessionTrackerApp === app) ArcanaManager.#possessionTrackerApp = null;
+      return originalClose(...args);
+    };
+
+    ArcanaManager.#possessionTrackerApp = app;
+    app.render({ force: true });
+    return app;
   }
 
   static #collectBannerActors() {
@@ -1404,8 +2210,7 @@ Héroïque : ${heroicText}">
       button: true,
       visible: true,
       order: 999,
-      onClick: () => ArcanaManager.openPossessionTracker(),
-      onChange: () => ArcanaManager.openPossessionTracker()
+      onClick: () => ArcanaManager.openPossessionTracker()
     };
 
     // Cas Foundry v13 : tools est un objet clé -> tool.
@@ -1675,6 +2480,43 @@ Héroïque : ${heroicText}">
         }
       });
     });
+  }
+
+  static debugPossessionTracker() {
+    const { trackedActors, rows } = ArcanaManager.#getPossessionTrackerRows();
+    const payload = {
+      trackedActors: trackedActors.map(actor => ({
+        actor: actor.name,
+        actorId: actor.id,
+        atouts: actor.items
+          .filter(i => i.type === "atoutArcane")
+          .map(i => axvPossessionSnapshot(i))
+      })),
+      rows
+    };
+    axvPossessionLog("DEBUG", "dump complet du suivi de possession", payload);
+    return payload;
+  }
+
+  static debugPossessionForActor(actorRef) {
+    const actor = game.actors?.get(actorRef)
+      ?? (game.actors?.contents ?? []).find(a => a.name === actorRef)
+      ?? (game.actors?.contents ?? []).find(a => normalizeText(a.name) === normalizeText(actorRef));
+    if (!actor) {
+      axvPossessionLog("DEBUG", "acteur introuvable", { actorRef });
+      return null;
+    }
+    const payload = {
+      actor: actor.name,
+      actorId: actor.id,
+      hasPlayerOwner: actor.hasPlayerOwner,
+      type: actor.type,
+      items: actor.items
+        .filter(i => i.type === "atoutArcane")
+        .map(i => axvPossessionSnapshot(i))
+    };
+    axvPossessionLog("DEBUG", "dump possession acteur", payload);
+    return payload;
   }
 
 }
