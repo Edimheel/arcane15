@@ -247,7 +247,7 @@ export class ArcanaManager {
   static #bannerNode = null;
 
   static init() {
-    Hooks.on("getSceneControlButtons", controls => ArcanaManager.#injectSceneControl(controls));
+    Hooks.on("getSceneControlButtons", controls => ArcanaManager.injectSceneControl(controls));
     Hooks.on("createItem", (item) => {
       if (item?.type !== "atoutArcane" || !(item?.actor ?? item?.parent)) return;
       ArcanaManager.syncPassiveActorBonuses(item);
@@ -266,8 +266,13 @@ export class ArcanaManager {
     Hooks.on("createActor", () => ArcanaManager.renderPublicBanner());
     Hooks.on("updateActor", () => ArcanaManager.renderPublicBanner());
     Hooks.on("canvasReady", () => ArcanaManager.renderPublicBanner());
-    Hooks.on("renderSceneControls", () => setTimeout(() => ArcanaManager.renderPublicBanner(), 0));
+    Hooks.on("renderSceneControls", () => setTimeout(() => {
+      ArcanaManager.renderPublicBanner();
+      ArcanaManager.ensurePossessionButtonDom();
+    }, 0));
     Hooks.on("renderSidebarTab", () => setTimeout(() => ArcanaManager.renderPublicBanner(), 0));
+    Hooks.on("canvasReady", () => setTimeout(() => ArcanaManager.ensurePossessionButtonDom(), 50));
+    Hooks.on("ready", () => setTimeout(() => ArcanaManager.ensurePossessionButtonDom(), 200));
     Hooks.on("renderChatMessageHTML", (message, html) => ArcanaManager.#bindChatButtons(message, html));
     Hooks.on("renderChatMessage", (message, html) => ArcanaManager.#bindChatButtons(message, html));
     ArcanaManager.#bindGlobalChatDelegation();
@@ -1077,23 +1082,194 @@ export class ArcanaManager {
     ArcanaManager.renderPublicBanner();
   }
 
+  static #getPossessionTrackedActors() {
+    return (game.actors?.contents ?? [])
+      .filter(actor => actor?.type === "personnage" && actor?.hasPlayerOwner);
+  }
+
+  static #buildPossessionTrackerContent(rows, actorCount) {
+    const empty = `
+      <div class="axv-possession-empty">
+        Aucun atout d’arcane lié sur les personnages joueurs.
+      </div>`;
+
+    const table = `
+      <div class="axv-possession-table-wrap">
+        <table class="axv-possession-table">
+          <thead>
+            <tr>
+              <th>Personnage</th>
+              <th>Arcane</th>
+              <th>Sataniste</th>
+              <th>Palier</th>
+              <th>Effet</th>
+            </tr>
+          </thead>
+          <tbody>${rows.map(r => `
+            <tr class="${r.palier >= 4 ? "is-alert" : ""}">
+              <td class="axv-possession-col-actor">${r.actor}</td>
+              <td class="axv-possession-col-arcane">${r.arcane}</td>
+              <td class="axv-possession-col-sataniste">${r.sataniste || "—"}</td>
+              <td class="axv-possession-col-palier"><span class="axv-possession-badge">${r.palier}</span></td>
+              <td class="axv-possession-col-effet">${r.effet}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    return `
+      <style>
+        .axv-possession-shell {
+          color: #f4efe6;
+          background: linear-gradient(180deg, rgba(34, 20, 14, 0.98) 0%, rgba(19, 12, 10, 0.98) 100%);
+          border: 1px solid rgba(214, 182, 120, 0.35);
+          border-radius: 16px;
+          padding: 14px;
+          box-sizing: border-box;
+        }
+        .axv-possession-header {
+          margin-bottom: 12px;
+          padding-bottom: 8px;
+          border-bottom: 1px solid rgba(214, 182, 120, 0.22);
+        }
+        .axv-possession-title {
+          font-size: 18px;
+          font-weight: 900;
+          letter-spacing: 0.02em;
+          color: #fff7e6;
+        }
+        .axv-possession-table-wrap {
+          max-height: min(70vh, 760px);
+          overflow: auto;
+          border-radius: 14px;
+          border: 1px solid rgba(214, 182, 120, 0.18);
+          background: rgba(255, 250, 244, 0.98) !important;
+        }
+        .axv-possession-table {
+          width: 100%;
+          border-collapse: separate;
+          border-spacing: 0;
+          table-layout: fixed;
+          background: transparent !important;
+        }
+        .axv-possession-table thead th {
+          position: sticky;
+          top: 0;
+          z-index: 1;
+          text-align: left;
+          padding: 12px 12px;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: #fff7e6 !important;
+          background: rgba(116, 12, 32, 0.98) !important;
+          border-bottom: 1px solid rgba(214, 182, 120, 0.22);
+        }
+        .axv-possession-table tbody tr td,
+        .axv-possession-table tbody tr:nth-child(even) td,
+        .axv-possession-table tbody tr:nth-child(odd) td {
+          padding: 11px 12px;
+          vertical-align: top;
+          font-size: 13px;
+          line-height: 1.45;
+          color: #2a211c !important;
+          background: rgba(255, 252, 248, 0.98) !important;
+          border-bottom: 1px solid rgba(214, 182, 120, 0.1);
+          overflow-wrap: anywhere;
+          word-break: break-word;
+          text-shadow: none !important;
+        }
+        .axv-possession-table tbody tr:nth-child(even) td {
+          background: rgba(247, 241, 234, 0.98) !important;
+        }
+        .axv-possession-table tbody tr:hover td {
+          background: rgba(239, 226, 212, 0.98) !important;
+        }
+        .axv-possession-table tbody tr.is-alert td {
+          background: rgba(248, 224, 224, 0.98) !important;
+          color: #3a1818 !important;
+        }
+        .axv-possession-table td *,
+        .axv-possession-table th * {
+          color: inherit !important;
+        }
+        .axv-possession-col-actor,
+        .axv-possession-col-arcane {
+          font-weight: 700;
+          color: #241b16 !important;
+        }
+        .axv-possession-col-sataniste,
+        .axv-possession-col-effet {
+          color: #352a24 !important;
+        }
+        .axv-possession-col-palier {
+          text-align: center;
+        }
+        .axv-possession-badge {
+          display: inline-flex;
+          min-width: 34px;
+          justify-content: center;
+          align-items: center;
+          padding: 4px 8px;
+          border-radius: 999px;
+          background: #f3d9a2 !important;
+          border: 1px solid rgba(214, 182, 120, 0.5);
+          font-weight: 900;
+          color: #2b120d !important;
+        }
+        .axv-possession-empty {
+          padding: 18px 16px;
+          border-radius: 12px;
+          background: rgba(255, 252, 248, 0.98) !important;
+          border: 1px dashed rgba(214, 182, 120, 0.28);
+          color: #2c221d !important;
+          text-align: center;
+        }
+        @media (max-width: 900px) {
+          .axv-possession-table {
+            table-layout: auto;
+          }
+        }
+      </style>
+      <div class="axv-possession-shell">
+        <div class="axv-possession-header">
+          <div class="axv-possession-title">Suivi possession</div>
+        </div>
+        ${rows.length ? table : empty}
+      </div>`;
+  }
+
   static openPossessionTracker() {
     if (!game.user?.isGM) return;
-    const rows = (game.actors?.contents ?? []).flatMap(actor => actor.items.filter(i => i.type === "atoutArcane").map(item => ({
-      actor: actor.name,
-      arcane: item.name,
-      sataniste: item.system?.sataniste || "",
-      palier: Number(item.system?.possessionLevel ?? 0),
-      effet: item.system?.possessionEffect || POSSESSION_EFFECTS[0]
-    })));
-    const content = rows.length ? `
-      <table class="axv-possession-table">
-        <thead><tr><th>Personnage</th><th>Arcane</th><th>Sataniste</th><th>Palier</th><th>Effet</th></tr></thead>
-        <tbody>${rows.map(r => `<tr><td>${r.actor}</td><td>${r.arcane}</td><td>${r.sataniste}</td><td>${r.palier}</td><td>${r.effet}</td></tr>`).join("")}</tbody>
-      </table>` : `<div class="axv-possession-empty">Aucun atout d’arcane lié pour le moment.</div>`;
+
+    const trackedActors = ArcanaManager.#getPossessionTrackedActors();
+    const rows = trackedActors
+      .flatMap(actor => actor.items
+        .filter(i => i.type === "atoutArcane")
+        .map(item => ({
+          actor: foundry.utils.escapeHTML(actor.name || ""),
+          arcane: foundry.utils.escapeHTML(item.name || ""),
+          sataniste: foundry.utils.escapeHTML(item.system?.sataniste || ""),
+          palier: Number(item.system?.possessionLevel ?? 0),
+          effet: foundry.utils.escapeHTML(item.system?.possessionEffect || POSSESSION_EFFECTS[0])
+        })))
+      .sort((a, b) => {
+        if (b.palier !== a.palier) return b.palier - a.palier;
+        return `${a.actor} ${a.arcane}`.localeCompare(`${b.actor} ${b.arcane}`, "fr", { sensitivity: "base" });
+      });
+
+    const content = ArcanaManager.#buildPossessionTrackerContent(rows, trackedActors.length);
 
     new DialogV2({
-      window: { title: "Arcane XV — Suivi de Possession" },
+      window: {
+        title: "Arcane XV — Suivi de Possession",
+        resizable: true
+      },
+      position: {
+        width: 1100,
+        height: 760
+      },
       content,
       buttons: [{ action: "close", label: "Fermer", default: true }]
     }).render({ force: true });
@@ -1209,35 +1385,76 @@ Héroïque : ${heroicText}">
     ArcanaManager.#bannerNode = node;
   }
 
-  static #injectSceneControl(controls) {
+  static injectSceneControl(controls) {
     if (!game.user?.isGM) return;
+
+    // Foundry v13 passe généralement un objet `controls` avec `controls.tokens.tools`.
+    // Certaines configurations / modules peuvent encore exposer une forme plus proche
+    // d'un tableau. On supporte les deux sans supposer que `tools` est un array.
     const tokenControls = Array.isArray(controls)
-      ? (controls.find(c => c.name === "token") ?? controls.find(c => c.name === "tokens") ?? controls[0])
-      : (controls?.tokens ?? controls?.token ?? Object.values(controls || {})[0]);
+      ? (controls.find(c => c?.name === "tokens") ?? controls.find(c => c?.name === "token") ?? controls[0])
+      : (controls?.tokens ?? controls?.token ?? null);
+
     if (!tokenControls) return;
 
     const tool = {
       name: "axv-possession",
       title: "Suivi de la possession",
-      icon: "fas fa-book-skull",
+      icon: "fas fa-book",
       button: true,
       visible: true,
-      onClick: () => ArcanaManager.openPossessionTracker()
+      order: 999,
+      onClick: () => ArcanaManager.openPossessionTracker(),
+      onChange: () => ArcanaManager.openPossessionTracker()
     };
 
+    // Cas Foundry v13 : tools est un objet clé -> tool.
+    if (tokenControls.tools && !Array.isArray(tokenControls.tools) && typeof tokenControls.tools === "object") {
+      if (tokenControls.tools[tool.name]) return;
+      tokenControls.tools[tool.name] = tool;
+      return;
+    }
+
+    // Fallback si une structure renvoie encore un tableau.
     if (Array.isArray(tokenControls.tools)) {
-      if (tokenControls.tools.some(t => t?.name === "axv-possession")) return;
+      if (tokenControls.tools.some(t => (t?.name ?? t) === tool.name)) return;
       tokenControls.tools.push(tool);
       return;
     }
 
-    if (tokenControls.tools && typeof tokenControls.tools === "object") {
-      if (tokenControls.tools["axv-possession"]) return;
-      tokenControls.tools["axv-possession"] = tool;
-      return;
+    // Dernier fallback : on initialise au format objet, compatible v13.
+    tokenControls.tools = { [tool.name]: tool };
+  }
+
+  static ensurePossessionButtonDom() {
+    if (!game.user?.isGM) return;
+    const controls = document.querySelector("#controls");
+    if (!controls) return;
+
+    let button = controls.querySelector('[data-tool="axv-possession"]');
+    if (button) return;
+
+    let list = controls.querySelector('#axv-possession-tools');
+    if (!list) {
+      list = document.createElement('ol');
+      list.id = 'axv-possession-tools';
+      list.className = 'control-tools';
+      list.style.marginTop = '6px';
+      controls.appendChild(list);
     }
 
-    tokenControls.tools = [tool];
+    button = document.createElement('li');
+    button.className = 'scene-control control-tool';
+    button.dataset.tool = 'axv-possession';
+    button.dataset.axvPossession = '1';
+    button.title = 'Suivi de la possession';
+    button.innerHTML = '<i class="fas fa-book"></i>';
+    button.addEventListener('click', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ArcanaManager.openPossessionTracker();
+    });
+    list.appendChild(button);
   }
 
   static #bindGlobalChatDelegation() {
