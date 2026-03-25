@@ -107,7 +107,7 @@ const ARCANA_BY_ID = new Map(ARCANA_DEFINITIONS.map(a => [a.arcaneId, a]));
 const PERSONAL_BY_KEY = new Map(PERSONAL_ATOUT_DEFINITIONS.map(a => [a.key, a]));
 
 
-const POSSESSION_SCALES_BY_ARCANE = {
+const POSSESSION_SCALES = {
   papesse: {
     1: "Contact. Rien de particulier.",
     2: "Dans la bibliothèque : rêve de la bibliothèque de la villa Hérodiade, discussion oubliée avec Gabriel d’Offémont, réveil oppressé.",
@@ -258,7 +258,7 @@ function resolvePossessionScaleArcaneId(itemOrArcaneId, sataniste = "") {
   const directArcaneId = typeof itemOrArcaneId === "string"
     ? itemOrArcaneId
     : (itemOrArcaneId?.system?.arcaneId ?? itemOrArcaneId?.arcaneId ?? "");
-  if (directArcaneId && (POSSESSION_SCALES_BY_ARCANE[directArcaneId] || ARCANA_BY_ID.has(directArcaneId))) {
+  if (directArcaneId && (POSSESSION_SCALES[directArcaneId] || ARCANA_BY_ID.has(directArcaneId))) {
     return directArcaneId;
   }
   const satanisteName = normalizeText(sataniste || itemOrArcaneId?.system?.sataniste || itemOrArcaneId?.sataniste || "");
@@ -302,7 +302,7 @@ function getPossessionEffectForArcane(itemOrArcaneId, level = 0, sataniste = "")
   const numericLevel = Math.max(0, Math.min(6, Number(level) || 0));
   if (numericLevel <= 0) return POSSESSION_EFFECTS[0];
   const arcaneId = resolvePossessionScaleArcaneId(itemOrArcaneId, sataniste);
-  const scale = POSSESSION_SCALES_BY_ARCANE[arcaneId];
+  const scale = POSSESSION_SCALES[arcaneId];
   if (scale?.[numericLevel]) return scale[numericLevel];
   return getFallbackPossessionEffect(arcaneId, numericLevel);
 }
@@ -386,6 +386,203 @@ function buildPossessionPersistenceUpdate(itemOrArcaneLike, level, sataniste = u
     }
   };
 }
+
+function getActorActivePossessionState(actorLike) {
+  const raw = actorLike?.getFlag?.("arcane15", "possession")
+    ?? actorLike?.flags?.arcane15?.possession
+    ?? actorLike?._source?.flags?.arcane15?.possession
+    ?? actorLike?.getFlag?.("arcane15", "activePossession")
+    ?? actorLike?.flags?.arcane15?.activePossession
+    ?? actorLike?._source?.flags?.arcane15?.activePossession
+    ?? {};
+
+  const sourceArcaneId = String(raw.sourceArcaneId ?? raw.arcaneId ?? "");
+  const sourceSataniste = String(raw.sourceSataniste ?? raw.sataniste ?? "");
+  const level = Math.max(0, Math.min(6, Number(raw.level ?? raw.possessionLevel ?? 0) || 0));
+  const arcane = String(raw.arcane ?? ARCANA_BY_ID.get(sourceArcaneId)?.name ?? "");
+  const currentEffectText = String(
+    raw.currentEffectText
+      ?? raw.effect
+      ?? raw.possessionEffect
+      ?? getPossessionEffectForArcane(sourceArcaneId, level, sourceSataniste)
+      ?? ""
+  );
+  const lastChangeAt = Math.max(0, Number(raw.lastChangeAt ?? raw.lastShiftAt ?? 0) || 0);
+  const startedAt = Math.max(0, Number(raw.startedAt ?? 0) || 0);
+
+  return {
+    sourceItemId: String(raw.sourceItemId ?? ""),
+    sourceItemUuid: String(raw.sourceItemUuid ?? ""),
+    sourceArcaneId,
+    arcane,
+    sourceSataniste,
+    sataniste: sourceSataniste,
+    level,
+    startedAt,
+    lastChangeAt,
+    lastShiftAt: lastChangeAt,
+    currentEffectText,
+    effect: currentEffectText
+  };
+}
+
+function buildActorActivePossessionUpdate(actorLike, item, { previousState = null, level = null, startedAt = null, lastChangeAt = null, sourceArcaneId = null, sourceSataniste = null } = {}) {
+  const previous = previousState ?? getActorActivePossessionState(actorLike);
+  const fallbackArcaneId = String(sourceArcaneId ?? item?.system?.arcaneId ?? item?.arcaneId ?? previous.sourceArcaneId ?? "");
+  const fallbackDef = ARCANA_BY_ID.get(fallbackArcaneId) ?? {};
+  const nextLevel = Math.max(0, Math.min(6, Number(level ?? getPersistedPossessionState(item).possessionLevel ?? previous.level ?? 0) || 0));
+  const nextSataniste = String(sourceSataniste ?? item?.system?.sataniste ?? previous.sourceSataniste ?? fallbackDef.sataniste ?? "");
+  const sameSource = String(previous.sourceItemId ?? "") === String(item?.id ?? "")
+    && String(previous.sourceArcaneId ?? "") === String(fallbackArcaneId ?? "");
+  const resolvedStartedAt = Math.max(0, Number(startedAt ?? (sameSource && Number(previous.startedAt || 0) > 0 ? previous.startedAt : (nextLevel > 0 ? Date.now() : 0))) || 0);
+  const resolvedLastChangeAt = Math.max(0, Number(lastChangeAt ?? (sameSource && Number(previous.lastChangeAt || 0) > 0 ? previous.lastChangeAt : (nextLevel > 0 ? Date.now() : 0))) || 0);
+  const arcaneName = String(item?.name ?? fallbackDef.name ?? previous.arcane ?? "");
+  const effect = String(getPossessionEffectForArcane(fallbackArcaneId || item, nextLevel, nextSataniste) || "");
+
+  const next = {
+    sourceItemId: String(item?.id ?? previous.sourceItemId ?? ""),
+    sourceItemUuid: String(item?.uuid ?? previous.sourceItemUuid ?? ""),
+    sourceArcaneId: fallbackArcaneId,
+    arcane: arcaneName,
+    sourceSataniste: nextSataniste,
+    sataniste: nextSataniste,
+    level: nextLevel,
+    startedAt: resolvedStartedAt,
+    lastChangeAt: resolvedLastChangeAt,
+    lastShiftAt: resolvedLastChangeAt,
+    currentEffectText: effect,
+    effect
+  };
+
+  return {
+    state: next,
+    updateData: {
+      "flags.arcane15.possession.sourceItemId": next.sourceItemId,
+      "flags.arcane15.possession.sourceItemUuid": next.sourceItemUuid,
+      "flags.arcane15.possession.sourceArcaneId": next.sourceArcaneId,
+      "flags.arcane15.possession.arcane": next.arcane,
+      "flags.arcane15.possession.sourceSataniste": next.sourceSataniste,
+      "flags.arcane15.possession.sataniste": next.sourceSataniste,
+      "flags.arcane15.possession.level": next.level,
+      "flags.arcane15.possession.currentEffectText": next.currentEffectText,
+      "flags.arcane15.possession.effect": next.currentEffectText,
+      "flags.arcane15.possession.startedAt": next.startedAt,
+      "flags.arcane15.possession.lastChangeAt": next.lastChangeAt,
+      "flags.arcane15.activePossession.sourceItemId": next.sourceItemId,
+      "flags.arcane15.activePossession.sourceItemUuid": next.sourceItemUuid,
+      "flags.arcane15.activePossession.sourceArcaneId": next.sourceArcaneId,
+      "flags.arcane15.activePossession.arcane": next.arcane,
+      "flags.arcane15.activePossession.sourceSataniste": next.sourceSataniste,
+      "flags.arcane15.activePossession.sataniste": next.sourceSataniste,
+      "flags.arcane15.activePossession.level": next.level,
+      "flags.arcane15.activePossession.currentEffectText": next.currentEffectText,
+      "flags.arcane15.activePossession.effect": next.currentEffectText,
+      "flags.arcane15.activePossession.startedAt": next.startedAt,
+      "flags.arcane15.activePossession.lastChangeAt": next.lastChangeAt,
+      "flags.arcane15.activePossession.lastShiftAt": next.lastChangeAt
+    }
+  };
+}
+
+function buildClearActorActivePossessionUpdate() {
+  return {
+    sourceItemId: "",
+    sourceItemUuid: "",
+    sourceArcaneId: "",
+    arcane: "",
+    sourceSataniste: "",
+    sataniste: "",
+    level: 0,
+    startedAt: 0,
+    lastChangeAt: 0,
+    lastShiftAt: 0,
+    currentEffectText: "",
+    effect: "",
+    updateData: {
+      "flags.arcane15.possession.sourceItemId": "",
+      "flags.arcane15.possession.sourceItemUuid": "",
+      "flags.arcane15.possession.sourceArcaneId": "",
+      "flags.arcane15.possession.arcane": "",
+      "flags.arcane15.possession.sourceSataniste": "",
+      "flags.arcane15.possession.sataniste": "",
+      "flags.arcane15.possession.level": 0,
+      "flags.arcane15.possession.currentEffectText": "",
+      "flags.arcane15.possession.effect": "",
+      "flags.arcane15.possession.startedAt": 0,
+      "flags.arcane15.possession.lastChangeAt": 0,
+      "flags.arcane15.activePossession.sourceItemId": "",
+      "flags.arcane15.activePossession.sourceItemUuid": "",
+      "flags.arcane15.activePossession.sourceArcaneId": "",
+      "flags.arcane15.activePossession.arcane": "",
+      "flags.arcane15.activePossession.sourceSataniste": "",
+      "flags.arcane15.activePossession.sataniste": "",
+      "flags.arcane15.activePossession.level": 0,
+      "flags.arcane15.activePossession.currentEffectText": "",
+      "flags.arcane15.activePossession.effect": "",
+      "flags.arcane15.activePossession.startedAt": 0,
+      "flags.arcane15.activePossession.lastChangeAt": 0,
+      "flags.arcane15.activePossession.lastShiftAt": 0
+    }
+  };
+}
+
+function buildActorPossessionComparable(state) {
+  return {
+    sourceItemId: String(state?.sourceItemId ?? ""),
+    sourceItemUuid: String(state?.sourceItemUuid ?? ""),
+    sourceArcaneId: String(state?.sourceArcaneId ?? ""),
+    arcane: String(state?.arcane ?? ""),
+    sourceSataniste: String(state?.sourceSataniste ?? state?.sataniste ?? ""),
+    level: Number(state?.level ?? 0) || 0,
+    startedAt: Number(state?.startedAt ?? 0) || 0,
+    lastChangeAt: Number(state?.lastChangeAt ?? state?.lastShiftAt ?? 0) || 0,
+    currentEffectText: String(state?.currentEffectText ?? state?.effect ?? "")
+  };
+}
+
+
+function getActorPossessionCandidates(actorLike) {
+  return (actorLike?.items ?? [])
+    .filter(item => item?.type === "atoutArcane")
+    .map(item => {
+      const state = getPersistedPossessionState(item);
+      if (Number(state.possessionLevel || 0) <= 0) return null;
+      const startedAt = getPossessionStartedAt(item, { preferNow: false });
+      const lastActivityAt = Number(item?.system?.lastHeroicAt ?? item?._source?.system?.lastHeroicAt ?? 0) || 0;
+      const modifiedAt = Number(item?._stats?.modifiedTime ?? item?._source?._stats?.modifiedTime ?? 0) || 0;
+      return {
+        item,
+        sourceItemId: String(item?.id ?? ""),
+        sourceItemUuid: String(item?.uuid ?? ""),
+        sourceArcaneId: String(state.arcaneId ?? ""),
+        arcane: String(item?.name ?? ARCANA_BY_ID.get(state.arcaneId)?.name ?? ""),
+        sataniste: String(state.sataniste ?? ""),
+        level: Math.max(0, Math.min(6, Number(state.possessionLevel) || 0)),
+        effect: String(getPossessionEffectForArcane(state.arcaneId || item, state.possessionLevel, state.sataniste) || state.possessionEffect || ""),
+        startedAt,
+        lastActivityAt,
+        modifiedAt
+      };
+    })
+    .filter(Boolean);
+}
+
+function sortActorPossessionCandidates(a, b) {
+  const shiftA = Number(a?.lastChangeAt ?? a?.lastShiftAt ?? 0) || 0;
+  const shiftB = Number(b?.lastChangeAt ?? b?.lastShiftAt ?? 0) || 0;
+  if (shiftB !== shiftA) return shiftB - shiftA;
+  const startA = Number(a?.startedAt ?? 0) || 0;
+  const startB = Number(b?.startedAt ?? 0) || 0;
+  if (startB !== startA) return startB - startA;
+  const activityA = Number(a?.lastActivityAt ?? a?.modifiedAt ?? 0) || 0;
+  const activityB = Number(b?.lastActivityAt ?? b?.modifiedAt ?? 0) || 0;
+  if (activityB !== activityA) return activityB - activityA;
+  const levelA = Number(a?.level ?? a?.palier ?? 0) || 0;
+  const levelB = Number(b?.level ?? b?.palier ?? 0) || 0;
+  if (levelB !== levelA) return levelB - levelA;
+  return `${a?.actor ?? ""} ${a?.arcane ?? ""}`.localeCompare(`${b?.actor ?? ""} ${b?.arcane ?? ""}`, "fr", { sensitivity: "base" });
+}
+
 
 const ARCANA_NAME_ALIASES = {
   "le mat": "mat",
@@ -560,6 +757,7 @@ export class ArcanaManager {
   static #possessionTrackerApp = null;
   static #possessionTrackerOpenStamp = 0;
   static #syncingPossessionEffectItems = new Set();
+  static #syncingActivePossessionActors = new Set();
 
   static init() {
     Hooks.on("getSceneControlButtons", controls => ArcanaManager.injectSceneControl(controls));
@@ -584,6 +782,7 @@ export class ArcanaManager {
       if (item?.type !== "atoutArcane" || !(item?.actor ?? item?.parent)) return;
       axvPossessionLog("HOOK:createItem", "item créé", { snapshot: axvPossessionSnapshot(item), options });
       void ArcanaManager.ensureItemPossessionEffectUpToDate(item, options);
+      void ArcanaManager.syncActivePossessionForActor(item?.actor ?? item?.parent ?? null, { sourceItem: item, changed: _data, options, reason: "createItem" });
       ArcanaManager.syncPassiveActorBonuses(item);
       ArcanaManager.refreshUIForActor(item?.actor ?? item?.parent ?? null);
     });
@@ -595,12 +794,14 @@ export class ArcanaManager {
         options
       });
       if (!options?.axvSkipPossessionEffectSync) void ArcanaManager.ensureItemPossessionEffectUpToDate(item, options);
+      void ArcanaManager.syncActivePossessionForActor(item?.actor ?? item?.parent ?? null, { sourceItem: item, changed: _changed, options, reason: "updateItem" });
       ArcanaManager.syncPassiveActorBonuses(item);
       ArcanaManager.refreshUIForActor(item?.actor ?? item?.parent ?? null);
     });
     Hooks.on("deleteItem", (item) => {
       if (item?.type !== "atoutArcane" || !(item?.actor ?? item?.parent)) return;
       axvPossessionLog("HOOK:deleteItem", "item supprimé", { snapshot: axvPossessionSnapshot(item) });
+      void ArcanaManager.syncActivePossessionForActor(item?.actor ?? item?.parent ?? null, { sourceItem: item, reason: "deleteItem" });
       ArcanaManager.syncPassiveActorBonuses(item);
       ArcanaManager.refreshUIForActor(item?.actor ?? item?.parent ?? null);
     });
@@ -626,10 +827,12 @@ export class ArcanaManager {
     for (const actor of game.actors ?? []) {
       if (actor.type !== "personnage") continue;
       await ArcanaManager.syncPassiveActorBonuses(actor);
+      await ArcanaManager.migrateLegacyActorPossession(actor);
       for (const item of actor.items.filter(i => i.type === "atoutArcane")) {
         await ArcanaManager.ensureItemPossessionEffectUpToDate(item);
         axvPossessionLog("READY", "état possession après synchronisation", axvPossessionSnapshot(item));
       }
+      await ArcanaManager.syncActivePossessionForActor(actor, { reason: "ready" });
     }
     ArcanaManager.#ensureBannerNode();
     ArcanaManager.renderPublicBanner();
@@ -649,6 +852,7 @@ export class ArcanaManager {
   }
 
   static getActorArcana(actor) {
+    const actorPossession = getActorActivePossessionState(actor);
     return actor.items
       .filter(i => i.type === "atoutArcane")
       .sort((a, b) => {
@@ -661,6 +865,17 @@ export class ArcanaManager {
       })
       .map(i => {
         const def = ARCANA_BY_ID.get(i.system?.arcaneId) ?? {};
+        const sameSource = Number(actorPossession.level || 0) > 0 && (
+          String(actorPossession.sourceItemId ?? "") === String(i.id ?? "")
+          || (String(actorPossession.sourceArcaneId ?? "") && String(actorPossession.sourceArcaneId ?? "") === String(i.system?.arcaneId ?? ""))
+        );
+        const possessionLevel = sameSource ? Number(actorPossession.level || 0) : 0;
+        const sataniste = sameSource
+          ? (actorPossession.sourceSataniste || def.sataniste || "")
+          : (i.system?.sataniste || def.sataniste || "");
+        const possessionEffect = sameSource
+          ? (actorPossession.currentEffectText || getPossessionEffectForArcane(i.system?.arcaneId, possessionLevel, sataniste))
+          : getPossessionEffectForArcane(i.system?.arcaneId, 0, sataniste);
         return {
           id: i.id,
           arcaneId: i.system?.arcaneId,
@@ -670,8 +885,9 @@ export class ArcanaManager {
           linked: i.system?.linked !== false,
           currentEffect: i.system?.currentEffect || def.currentEffect || "",
           heroicEffect: i.system?.heroicEffect || def.heroicEffect || "",
-          sataniste: getPersistedPossessionState(i).sataniste || def.sataniste || "",
-          possessionLevel: getPersistedPossessionState(i).possessionLevel,
+          sataniste,
+          possessionLevel,
+          possessionEffect,
           heroicCost: Number(i.system?.heroicCost ?? 1),
           automationSummary: ARCANA_AUTOMATION_LABELS[i.system?.arcaneId] || "Automatisation partielle.",
           statusBadges: ArcanaManager.getArcanaStatusBadges(actor, i)
@@ -780,6 +996,65 @@ export class ArcanaManager {
     if (previousDmg !== nextDmg) await actor.setFlag("arcane15", "arcaneDamageBonus", nextDmg);
   }
 
+  static async resetLegacyItemPossession(actor) {
+    if (!actor || actor.type !== "personnage") return false;
+    let changedAny = false;
+    for (const item of (actor.items ?? [])) {
+      if (item?.type !== "atoutArcane") continue;
+      const def = ARCANA_BY_ID.get(item.system?.arcaneId) ?? {};
+      const zeroSataniste = String(item.system?.sataniste ?? def.sataniste ?? "");
+      const zeroEffect = getPossessionEffectForArcane(item.system?.arcaneId || def.arcaneId || item, 0, zeroSataniste);
+      const currentFlag = item.getFlag?.("arcane15", "possession") ?? item.flags?.arcane15?.possession ?? {};
+      const updates = {};
+      if (Number(item.system?.possessionLevel ?? 0) !== 0) updates["system.possessionLevel"] = 0;
+      if (String(item.system?.possessionEffect ?? "") !== String(zeroEffect)) updates["system.possessionEffect"] = zeroEffect;
+      if (String(currentFlag?.arcaneId ?? "") !== String(item.system?.arcaneId ?? def.arcaneId ?? "")) updates["flags.arcane15.possession.arcaneId"] = String(item.system?.arcaneId ?? def.arcaneId ?? "");
+      if (String(currentFlag?.sataniste ?? "") !== zeroSataniste) updates["flags.arcane15.possession.sataniste"] = zeroSataniste;
+      if (Number(currentFlag?.level ?? currentFlag?.possessionLevel ?? 0) !== 0) updates["flags.arcane15.possession.level"] = 0;
+      if (String(currentFlag?.effect ?? currentFlag?.possessionEffect ?? "") !== String(zeroEffect)) updates["flags.arcane15.possession.effect"] = zeroEffect;
+      if (Number(currentFlag?.startedAt ?? 0) !== 0) updates["flags.arcane15.possession.startedAt"] = 0;
+      if (Object.keys(updates).length) {
+        changedAny = true;
+        await item.update(updates, { axvSkipPossessionEffectSync: true, axvSkipActorPossessionSync: true });
+      }
+    }
+    return changedAny;
+  }
+
+  static async migrateLegacyActorPossession(actor, { force = false } = {}) {
+    if (!actor || actor.type !== "personnage") return null;
+    const current = getActorActivePossessionState(actor);
+    if (!force && Number(current.level || 0) > 0) {
+      await ArcanaManager.resetLegacyItemPossession(actor);
+      return current;
+    }
+    const candidates = getActorPossessionCandidates(actor).sort(sortActorPossessionCandidates);
+    const chosen = candidates[0] ?? null;
+    if (!chosen) {
+      if (Number(current.level || 0) > 0 || force) {
+        const clear = buildClearActorActivePossessionUpdate();
+        await actor.update(clear.updateData, { axvSkipActorPossessionSync: true });
+      }
+      await ArcanaManager.resetLegacyItemPossession(actor);
+      return buildClearActorActivePossessionUpdate();
+    }
+    const desired = buildActorActivePossessionUpdate(actor, chosen.item, {
+      previousState: current,
+      level: chosen.level,
+      startedAt: chosen.startedAt || Date.now(),
+      lastChangeAt: Date.now(),
+      sourceArcaneId: chosen.sourceArcaneId,
+      sourceSataniste: chosen.sataniste
+    });
+    const prevComparable = buildActorPossessionComparable(current);
+    const nextComparable = buildActorPossessionComparable(desired.state);
+    if (JSON.stringify(prevComparable) !== JSON.stringify(nextComparable)) {
+      await actor.update(desired.updateData, { axvSkipActorPossessionSync: true });
+    }
+    await ArcanaManager.resetLegacyItemPossession(actor);
+    return desired.state;
+  }
+
   static preparePossessionTrackingUpdate(item, changed, options = {}) {
     if (!item || item.type !== "atoutArcane") return;
 
@@ -858,49 +1133,159 @@ export class ArcanaManager {
       return false;
     }
 
-    const persisted = getPersistedPossessionState(item);
-    const next = buildPossessionPersistenceUpdate(item, persisted.possessionLevel, persisted.sataniste);
-    const updates = {};
+    const def = ARCANA_BY_ID.get(item.system?.arcaneId) ?? {};
+    const sataniste = String(item.system?.sataniste ?? def.sataniste ?? "");
+    const zeroEffect = getPossessionEffectForArcane(item.system?.arcaneId || def.arcaneId || item, 0, sataniste);
     const currentFlag = item.getFlag?.("arcane15", "possession") ?? item.flags?.arcane15?.possession ?? {};
-    const currentStartedAt = Number(currentFlag?.startedAt ?? 0) || 0;
-    const resolvedStartedAt = next.possessionLevel > 0 ? getPossessionStartedAt(item, { preferNow: true }) : 0;
+    const updates = {};
+    if (Number(item.system?.possessionLevel ?? 0) !== 0) updates["system.possessionLevel"] = 0;
+    if (String(item.system?.possessionEffect ?? "") !== String(zeroEffect)) updates["system.possessionEffect"] = zeroEffect;
+    if (String(currentFlag?.arcaneId ?? "") !== String(item.system?.arcaneId ?? def.arcaneId ?? "")) updates["flags.arcane15.possession.arcaneId"] = String(item.system?.arcaneId ?? def.arcaneId ?? "");
+    if (String(currentFlag?.sataniste ?? "") !== sataniste) updates["flags.arcane15.possession.sataniste"] = sataniste;
+    if (Number(currentFlag?.level ?? currentFlag?.possessionLevel ?? 0) !== 0) updates["flags.arcane15.possession.level"] = 0;
+    if (String(currentFlag?.effect ?? currentFlag?.possessionEffect ?? "") !== String(zeroEffect)) updates["flags.arcane15.possession.effect"] = zeroEffect;
+    if (Number(currentFlag?.startedAt ?? 0) !== 0) updates["flags.arcane15.possession.startedAt"] = 0;
 
-    if (String(item.system?.sataniste ?? "") !== String(next.sataniste ?? "")) updates["system.sataniste"] = next.sataniste;
-    if (Number(item.system?.possessionLevel ?? 0) !== Number(next.possessionLevel ?? 0)) updates["system.possessionLevel"] = next.possessionLevel;
-    if (String(item.system?.possessionEffect ?? "") !== String(next.possessionEffect ?? "")) updates["system.possessionEffect"] = next.possessionEffect;
-    if (String(currentFlag?.arcaneId ?? "") !== String(next.arcaneId ?? "")) updates["flags.arcane15.possession.arcaneId"] = next.arcaneId;
-    if (String(currentFlag?.sataniste ?? "") !== String(next.sataniste ?? "")) updates["flags.arcane15.possession.sataniste"] = next.sataniste;
-    if (Number(currentFlag?.level ?? currentFlag?.possessionLevel ?? 0) !== Number(next.possessionLevel ?? 0)) updates["flags.arcane15.possession.level"] = next.possessionLevel;
-    if (String(currentFlag?.effect ?? currentFlag?.possessionEffect ?? "") !== String(next.possessionEffect ?? "")) updates["flags.arcane15.possession.effect"] = next.possessionEffect;
-    if (currentStartedAt !== resolvedStartedAt) updates["flags.arcane15.possession.startedAt"] = resolvedStartedAt;
-
-    axvPossessionLog("SYNC", "comparaison état courant / état voulu", {
+    axvPossessionLog("SYNC", "normalisation legacy item possession", {
       before: axvPossessionSnapshot(item),
-      target: next,
-      resolvedStartedAt,
+      target: { possessionLevel: 0, possessionEffect: zeroEffect, sataniste },
       updates
     });
 
-    if (!Object.keys(updates).length) {
-      axvPossessionLog("SYNC", "aucune mise à jour nécessaire", { snapshot: axvPossessionSnapshot(item) });
-      return false;
-    }
+    if (!Object.keys(updates).length) return false;
 
     ArcanaManager.#syncingPossessionEffectItems.add(syncKey);
     try {
-      axvPossessionLog("SYNC", "application de la synchronisation", {
-        actor: item.actor?.name ?? item.parent?.name ?? null,
-        item: item.name ?? null,
-        updates
-      });
-      await item.update(updates, { axvSkipPossessionEffectSync: true });
-      axvPossessionLog("SYNC", "synchronisation appliquée", { snapshot: axvPossessionSnapshot(item) });
+      await item.update(updates, { axvSkipPossessionEffectSync: true, axvSkipActorPossessionSync: true });
       return true;
     } catch (err) {
-      console.warn("[ARCANE XV][POSSESSION] impossible de synchroniser l'effet de possession", err);
+      console.warn("[ARCANE XV][POSSESSION] impossible de normaliser l'état legacy de possession de l'item", err);
       return false;
     } finally {
       ArcanaManager.#syncingPossessionEffectItems.delete(syncKey);
+    }
+  }
+
+  static async syncActivePossessionForActor(source, { sourceItem = null, changed = null, options = {}, forceSource = false, reason = "sync" } = {}) {
+    const actor = source?.actor ?? source?.parent ?? source ?? null;
+    if (!actor || actor.type !== "personnage") return null;
+    if (options?.axvSkipActorPossessionSync) return getActorActivePossessionState(actor);
+
+    const actorKey = String(actor.uuid ?? actor.id ?? actor.name ?? foundry.utils.randomID());
+    if (ArcanaManager.#syncingActivePossessionActors.has(actorKey)) {
+      axvPossessionLog("ACTIVE", "sync ignorée car déjà en cours", { actor: actor.name, actorId: actor.id, reason });
+      return getActorActivePossessionState(actor);
+    }
+
+    const previous = getActorActivePossessionState(actor);
+    const currentSourceItem = Number(previous.level || 0) > 0
+      ? (actor.items.get(previous.sourceItemId) ?? actor.items.find(i => i.type === "atoutArcane" && String(i.system?.arcaneId ?? "") === String(previous.sourceArcaneId ?? "")) ?? null)
+      : null;
+    const legacyCandidates = getActorPossessionCandidates(actor).sort(sortActorPossessionCandidates);
+    const sourceLegacyCandidate = sourceItem ? legacyCandidates.find(candidate => String(candidate.sourceItemId ?? "") === String(sourceItem.id ?? "")) ?? null : null;
+    const touchesLegacyPossession = !!changed && (
+      foundry.utils.hasProperty(changed, "system.possessionLevel")
+      || foundry.utils.hasProperty(changed, "system.possessionEffect")
+      || foundry.utils.hasProperty(changed, "system.sataniste")
+      || foundry.utils.hasProperty(changed, "flags.arcane15.possession")
+    );
+    const changedLevel = touchesLegacyPossession ? getChangedPossessionLevel(changed, sourceLegacyCandidate?.level ?? 0) : 0;
+    const changedStartedAt = Number(foundry.utils.getProperty(changed, "flags.arcane15.possession.startedAt") ?? 0) || 0;
+
+    let desired = null;
+    let chosenDescriptor = null;
+
+    if (forceSource && sourceItem) {
+      const sameAsPrevious = String(previous.sourceItemId ?? "") === String(sourceItem.id ?? "")
+        || (String(previous.sourceArcaneId ?? "") && String(previous.sourceArcaneId ?? "") === String(sourceItem.system?.arcaneId ?? ""));
+      const nextLevel = sameAsPrevious && Number(previous.level || 0) > 0
+        ? Number(previous.level || 0)
+        : Math.max(1, Number(getPersistedPossessionState(sourceItem).possessionLevel || 1));
+      desired = buildActorActivePossessionUpdate(actor, sourceItem, {
+        previousState: previous,
+        level: nextLevel,
+        startedAt: sameAsPrevious ? previous.startedAt : Date.now(),
+        lastChangeAt: Date.now(),
+        sourceArcaneId: sourceItem.system?.arcaneId,
+        sourceSataniste: sourceItem.system?.sataniste
+      });
+      chosenDescriptor = { mode: "forceSource", sourceItem: sourceItem.name, nextLevel };
+    } else if (Number(previous.level || 0) > 0 && currentSourceItem) {
+      desired = buildActorActivePossessionUpdate(actor, currentSourceItem, {
+        previousState: previous,
+        level: previous.level,
+        startedAt: previous.startedAt,
+        lastChangeAt: previous.lastChangeAt,
+        sourceArcaneId: previous.sourceArcaneId,
+        sourceSataniste: previous.sourceSataniste
+      });
+      chosenDescriptor = { mode: "actorSource", sourceItem: currentSourceItem.name, level: previous.level };
+    } else if (touchesLegacyPossession && sourceItem && changedLevel > 0) {
+      desired = buildActorActivePossessionUpdate(actor, sourceItem, {
+        previousState: previous,
+        level: changedLevel,
+        startedAt: changedStartedAt || Date.now(),
+        lastChangeAt: Date.now(),
+        sourceArcaneId: sourceItem.system?.arcaneId,
+        sourceSataniste: sourceItem.system?.sataniste
+      });
+      chosenDescriptor = { mode: "legacyChange", sourceItem: sourceItem.name, changedLevel };
+    } else if (legacyCandidates.length) {
+      const chosen = legacyCandidates[0];
+      desired = buildActorActivePossessionUpdate(actor, chosen.item, {
+        previousState: previous,
+        level: chosen.level,
+        startedAt: chosen.startedAt || Date.now(),
+        lastChangeAt: Date.now(),
+        sourceArcaneId: chosen.sourceArcaneId,
+        sourceSataniste: chosen.sataniste
+      });
+      chosenDescriptor = { mode: "legacyMigration", sourceItem: chosen.item?.name ?? null, level: chosen.level };
+    } else {
+      desired = buildClearActorActivePossessionUpdate();
+      chosenDescriptor = { mode: "clear" };
+    }
+
+    axvPossessionLog("ACTIVE", "évaluation possession acteur", {
+      actor: actor.name,
+      actorId: actor.id,
+      actorUuid: actor.uuid ?? null,
+      reason,
+      previous,
+      sourceItem: sourceItem ? axvPossessionSnapshot(sourceItem) : null,
+      touchesLegacyPossession,
+      changedLevel,
+      changedStartedAt,
+      legacyCandidates: legacyCandidates.map(candidate => ({
+        sourceItemId: candidate.sourceItemId,
+        sourceArcaneId: candidate.sourceArcaneId,
+        arcane: candidate.arcane,
+        sataniste: candidate.sataniste,
+        level: candidate.level,
+        startedAt: candidate.startedAt,
+        lastActivityAt: candidate.lastActivityAt,
+        modifiedAt: candidate.modifiedAt
+      })),
+      chosenDescriptor,
+      desired: desired?.state ?? desired
+    });
+
+    const currentComparable = buildActorPossessionComparable(previous);
+    const nextComparable = buildActorPossessionComparable(desired?.state ?? desired);
+    if (JSON.stringify(currentComparable) === JSON.stringify(nextComparable)) {
+      return desired?.state ?? desired;
+    }
+
+    ArcanaManager.#syncingActivePossessionActors.add(actorKey);
+    try {
+      await actor.update(desired.updateData, { axvSkipActorPossessionSync: true });
+      await ArcanaManager.resetLegacyItemPossession(actor);
+      return desired?.state ?? desired;
+    } catch (err) {
+      console.warn("[ARCANE XV][POSSESSION] impossible de synchroniser la possession active de l'acteur", err);
+      return previous;
+    } finally {
+      ArcanaManager.#syncingActivePossessionActors.delete(actorKey);
     }
   }
 
@@ -937,108 +1322,55 @@ export class ArcanaManager {
     const grouped = new Map();
 
     const sortRows = (a, b) => {
-      const timeA = Number(a.startedAt) || 0;
-      const timeB = Number(b.startedAt) || 0;
-      if (timeB !== timeA) return timeB - timeA;
-      const activityA = Number(a.lastActivityAt) || Number(a.modifiedAt) || 0;
-      const activityB = Number(b.lastActivityAt) || Number(b.modifiedAt) || 0;
-      if (activityB !== activityA) return activityB - activityA;
-      if (b.palier !== a.palier) return b.palier - a.palier;
-      return `${a.actor} ${a.arcane}`.localeCompare(`${b.actor} ${b.arcane}`, "fr", { sensitivity: "base" });
+      const changeDelta = (Number(b?.lastChangeAt ?? b?.lastShiftAt ?? 0) || 0) - (Number(a?.lastChangeAt ?? a?.lastShiftAt ?? 0) || 0);
+      if (changeDelta !== 0) return changeDelta;
+      return sortActorPossessionCandidates(a, b);
     };
 
     for (const actor of trackedActors) {
       const trackingKey = ArcanaManager.#getPossessionTrackingKey(actor);
-      const activeRows = actor.items
-        .filter(i => i.type === "atoutArcane")
-        .map(item => {
-          const state = getPersistedPossessionState(item);
-          const palier = state.possessionLevel;
-          if (palier <= 0) return null;
-          const effet = getPossessionEffectForArcane(state.arcaneId || item, palier, state.sataniste);
-          const startedAt = getPossessionStartedAt(item, { preferNow: false });
-          const lastActivityAt = Number(item.system?.lastHeroicAt ?? item._source?.system?.lastHeroicAt ?? 0) || 0;
-          const modifiedAt = Number(item._stats?.modifiedTime ?? item._source?._stats?.modifiedTime ?? 0) || 0;
-          return {
-            trackingKey,
-            actorId: actor.id,
-            actorUuid: actor.uuid ?? null,
-            isTokenActor: !!actor.isToken,
-            actor: foundry.utils.escapeHTML(actor.name || ""),
-            arcane: foundry.utils.escapeHTML(item.name || ARCANA_BY_ID.get(state.arcaneId)?.name || ""),
-            sataniste: foundry.utils.escapeHTML(state.sataniste || (ARCANA_BY_ID.get(state.arcaneId)?.sataniste ?? "")),
-            palier,
-            effet: foundry.utils.escapeHTML(effet),
-            startedAt,
-            lastActivityAt,
-            modifiedAt
-          };
-        })
-        .filter(Boolean)
-        .sort(sortRows);
-
+      const actorPossession = getActorActivePossessionState(actor);
       axvPossessionLog("TRACKER", "candidats pour le suivi", {
         actor: actor.name,
         actorId: actor.id,
         actorUuid: actor.uuid ?? null,
         isTokenActor: !!actor.isToken,
         trackingKey,
-        candidates: activeRows.map(r => ({
-          actor: r.actor,
-          arcane: r.arcane,
-          palier: r.palier,
-          startedAt: r.startedAt,
-          startedAtIso: r.startedAt ? new Date(r.startedAt).toISOString() : null,
-          lastActivityAt: r.lastActivityAt,
-          modifiedAt: r.modifiedAt
-        }))
+        actorPossession
       });
-
+      if (Number(actorPossession.level || 0) <= 0 || !String(actorPossession.sourceArcaneId || "")) continue;
+      const def = ARCANA_BY_ID.get(actorPossession.sourceArcaneId) ?? {};
+      const row = {
+        trackingKey,
+        actorId: actor.id,
+        actorUuid: actor.uuid ?? null,
+        isTokenActor: !!actor.isToken,
+        actor: foundry.utils.escapeHTML(actor.name || ""),
+        arcane: foundry.utils.escapeHTML(actorPossession.arcane || def.name || ""),
+        sataniste: foundry.utils.escapeHTML(actorPossession.sourceSataniste || def.sataniste || ""),
+        palier: Math.max(0, Math.min(6, Number(actorPossession.level) || 0)),
+        effet: foundry.utils.escapeHTML(actorPossession.currentEffectText || getPossessionEffectForArcane(actorPossession.sourceArcaneId, actorPossession.level, actorPossession.sourceSataniste) || ""),
+        startedAt: Number(actorPossession.startedAt || 0) || 0,
+        lastChangeAt: Number(actorPossession.lastChangeAt || 0) || 0,
+        lastShiftAt: Number(actorPossession.lastChangeAt || 0) || 0,
+        sourceItemId: String(actorPossession.sourceItemId ?? ""),
+        sourceArcaneId: String(actorPossession.sourceArcaneId ?? "")
+      };
       if (!grouped.has(trackingKey)) grouped.set(trackingKey, []);
-      grouped.get(trackingKey).push(...activeRows);
+      grouped.get(trackingKey).push(row);
     }
 
     const rows = [...grouped.entries()]
       .map(([trackingKey, candidates]) => {
         const sorted = [...candidates].sort(sortRows);
         const chosen = sorted[0] ?? null;
-        axvPossessionLog("TRACKER", "choix final pour le personnage", {
-          trackingKey,
-          candidates: sorted.map(r => ({
-            actor: r.actor,
-            actorId: r.actorId,
-            actorUuid: r.actorUuid,
-            isTokenActor: r.isTokenActor,
-            arcane: r.arcane,
-            palier: r.palier,
-            startedAt: r.startedAt,
-            startedAtIso: r.startedAt ? new Date(r.startedAt).toISOString() : null,
-            lastActivityAt: r.lastActivityAt,
-            modifiedAt: r.modifiedAt
-          })),
-          chosen
-        });
+        axvPossessionLog("TRACKER", "choix final pour le personnage", { trackingKey, candidates: sorted, chosen });
         return chosen;
       })
       .filter(Boolean)
       .sort(sortRows);
 
-    axvPossessionLog("TRACKER", "lignes finales du suivi", {
-      trackedActorCount: trackedActors.length,
-      uniqueCharacterCount: grouped.size,
-      rows: rows.map(r => ({
-        actor: r.actor,
-        arcane: r.arcane,
-        palier: r.palier,
-        startedAt: r.startedAt,
-        startedAtIso: r.startedAt ? new Date(r.startedAt).toISOString() : null,
-        effet: r.effet,
-        actorId: r.actorId,
-        actorUuid: r.actorUuid,
-        isTokenActor: r.isTokenActor,
-        trackingKey: r.trackingKey
-      }))
-    });
+    axvPossessionLog("TRACKER", "lignes finales du suivi", { trackedActorCount: trackedActors.length, uniqueCharacterCount: grouped.size, rows });
     return { trackedActors, rows };
   }
 
@@ -1108,7 +1440,7 @@ export class ArcanaManager {
         actorUuid: a?.uuid ?? null,
         isTokenActor: !!a?.isToken,
         trackingKey: ArcanaManager.#getPossessionTrackingKey(a),
-        activeArcana: a?.items?.filter?.(i => i.type === "atoutArcane").map(i => axvPossessionSnapshot(i)) ?? []
+        actorPossession: getActorActivePossessionState(a), activeArcana: a?.items?.filter?.(i => i.type === "atoutArcane").map(i => ({ ...axvPossessionSnapshot(i), displayLevel: (String(getActorActivePossessionState(a).sourceItemId ?? "") === String(i.id ?? "") || String(getActorActivePossessionState(a).sourceArcaneId ?? "") === String(i.system?.arcaneId ?? "")) ? Number(getActorActivePossessionState(a).level || 0) : 0 })) ?? []
       }))
     });
     queueMicrotask(() => {
@@ -1506,6 +1838,7 @@ export class ArcanaManager {
       chatNote: `Après usage héroïque de ${item.name}`
     });
     if (!result) return;
+    await ArcanaManager.#postPossessionResistanceRollForGM(actor, item, result, possessionDiff);
     if (!result.success) await ArcanaManager.increasePossession(actor, item);
   }
 
@@ -1728,6 +2061,27 @@ export class ArcanaManager {
     await dialog.render({ force: true });
   }
 
+  static async #postPossessionResistanceRollForGM(actor, item, result, difficulty) {
+    const success = !!result?.success;
+    const verdict = success ? "Réussite" : "Échec";
+    const verdictBg = success ? "rgba(46, 125, 50, 0.12)" : "rgba(198, 40, 40, 0.12)";
+    const verdictBorder = success ? "rgba(46, 125, 50, 0.35)" : "rgba(198, 40, 40, 0.35)";
+    const verdictColor = success ? "#1b5e20" : "#8e0000";
+    await ChatMessage.create({
+      whisper: gmWhisperIds(),
+      speaker: ChatMessage.getSpeaker({ actor }),
+      content: `
+        <div class="axv-chat-card" style="width:100%; max-width:100%; box-sizing:border-box; border:1px solid rgba(0,0,0,.18); border-radius:14px; overflow:hidden; background:#fff;">
+          <div style="padding:10px 12px; border-bottom:1px solid rgba(0,0,0,.12); font-weight:900; box-sizing:border-box;">Jet pour éviter la possession</div>
+          <div style="padding:12px; box-sizing:border-box;">
+            <div style="font-size:15px; font-weight:900; color:#111;">${actor?.name ?? "Personnage"}</div>
+            <div style="margin-top:4px; color:#333;"><strong>Atout :</strong> ${item?.name ?? "Atout"}</div>
+            <div style="margin-top:10px; display:inline-block; padding:6px 10px; border-radius:999px; font-weight:900; background:${verdictBg}; border:1px solid ${verdictBorder}; color:${verdictColor};">${verdict}</div>
+          </div>
+        </div>`
+    });
+  }
+
   static async #drawTemporaryCard(actor, label = "Pioche d’arcane") {
     let deck = game.cards.get(actor.getFlag("arcane15", "deck"));
     let hand = game.cards.get(actor.getFlag("arcane15", "hand"));
@@ -1765,30 +2119,48 @@ export class ArcanaManager {
   }
 
   static async increasePossession(actor, item) {
-    const currentState = getPersistedPossessionState(item);
-    const next = Math.min(6, Number(currentState.possessionLevel ?? 0) + 1);
-    const persisted = buildPossessionPersistenceUpdate(item, next, currentState.sataniste);
-    axvPossessionLog("INCREASE", "augmentation demandée", {
-      actor: actor?.name ?? null,
-      before: axvPossessionSnapshot(item),
-      nextLevel: next,
-      target: persisted
+    const currentActorState = getActorActivePossessionState(actor);
+    const hasActiveSource = Number(currentActorState.level || 0) > 0 && String(currentActorState.sourceArcaneId || "").trim().length > 0;
+    const currentSourceItem = hasActiveSource
+      ? (actor.items.get(currentActorState.sourceItemId) ?? actor.items.find(i => i.type === "atoutArcane" && String(i.system?.arcaneId ?? "") === String(currentActorState.sourceArcaneId ?? "")) ?? null)
+      : null;
+    const triggerItem = item ?? currentSourceItem ?? null;
+    if (!triggerItem) return;
+
+    const triggerArcaneId = String(triggerItem.system?.arcaneId || "");
+    const triggerSataniste = String(triggerItem.system?.sataniste || ARCANA_BY_ID.get(triggerArcaneId)?.sataniste || "");
+    const continuingSameSource = hasActiveSource && (
+      String(currentActorState.sourceItemId ?? "") === String(triggerItem.id ?? "")
+      || (String(currentActorState.sourceArcaneId ?? "") && String(currentActorState.sourceArcaneId ?? "") === String(triggerArcaneId ?? ""))
+    );
+    const switchingSource = hasActiveSource && !continuingSameSource;
+    const sourceItem = triggerItem;
+    const sourceArcaneId = triggerArcaneId || String(currentActorState.sourceArcaneId || "");
+    const sourceSataniste = triggerSataniste || String(currentActorState.sourceSataniste || "");
+    const currentLevel = continuingSameSource ? Number(currentActorState.level || 0) : 0;
+    const nextLevel = continuingSameSource ? Math.min(6, currentLevel + 1) : 1;
+    const startedAt = continuingSameSource && Number(currentActorState.startedAt || 0) > 0 ? Number(currentActorState.startedAt || 0) : Date.now();
+    const desired = buildActorActivePossessionUpdate(actor, sourceItem, {
+      previousState: currentActorState,
+      level: nextLevel,
+      startedAt,
+      lastChangeAt: Date.now(),
+      sourceArcaneId,
+      sourceSataniste
     });
-    const currentStartedAt = getStoredPossessionStartedAt(item);
-    const nextStartedAt = currentState.possessionLevel <= 0 ? Date.now() : (currentStartedAt || Date.now());
-    const updateData = {
-      ...persisted.updateData,
-      "flags.arcane15.possession.startedAt": nextStartedAt
-    };
-    axvPossessionLog("INCREASE", "updateData appliqué sur l'item", {
+
+    axvPossessionLog("INCREASE", "augmentation possession acteur", {
       actor: actor?.name ?? null,
-      item: item?.name ?? null,
-      updateData
+      triggerItem: item?.name ?? null,
+      sourceItem: sourceItem?.name ?? null,
+      continuingSameSource,
+      switchingSource,
+      before: currentActorState,
+      next: desired.state
     });
-    await item.update(updateData);
-    axvPossessionLog("INCREASE", "état après item.update", { afterUpdate: axvPossessionSnapshot(item) });
-    await ArcanaManager.ensureItemPossessionEffectUpToDate(item, { axvSkipPossessionEffectSync: true });
-    axvPossessionLog("INCREASE", "état final avant refresh UI", { final: axvPossessionSnapshot(item) });
+
+    await actor.update(desired.updateData, { axvSkipActorPossessionSync: true });
+    await ArcanaManager.resetLegacyItemPossession(actor);
     ArcanaManager.refreshUIForActor(actor);
     await ChatMessage.create({
       whisper: gmWhisperIds(),
@@ -1796,9 +2168,9 @@ export class ArcanaManager {
       content: `
         <div class="axv-arcana-gm-card">
           <div><strong>Possession</strong> — ${actor.name}</div>
-          <div style="margin-top:6px;"><strong>${item.name}</strong> (${persisted.sataniste || "sans sataniste"})</div>
-          <div style="margin-top:6px;">Palier atteint : <strong>${persisted.possessionLevel}</strong></div>
-          <div style="margin-top:6px;">Effet : ${persisted.possessionEffect}</div>
+          <div style="margin-top:6px;"><strong>${sourceItem.name}</strong> (${desired.state.sourceSataniste || "sans sataniste"})</div>
+          <div style="margin-top:6px;">Palier atteint : <strong>${desired.state.level}</strong></div>
+          <div style="margin-top:6px;">Effet : ${desired.state.currentEffectText}</div>
         </div>`
     });
     ArcanaManager.renderPublicBanner();
@@ -1812,13 +2184,18 @@ export class ArcanaManager {
       .map(([id]) => id)
       .sort();
     const ownerKey = ownerIds.join(",");
+    const actorId = String(actor?.id ?? "").trim();
     const baseId = String(actor?.baseActor?.id ?? actor?.token?.baseActor?.id ?? "").trim();
     const sourceId = String(actor?.flags?.core?.sourceId ?? actor?._source?.flags?.core?.sourceId ?? "").trim();
+    const sourceActorMatch = sourceId.match(/^Actor\.([^\.]+)$/);
+    const sourceActorId = String(sourceActorMatch?.[1] ?? "").trim();
+
+    if (sourceActorId) return `base:${sourceActorId}`;
     if (baseId) return `base:${baseId}`;
-    if (sourceId) return `source:${sourceId}`;
+    if (actorId && !actor?.isToken) return `base:${actorId}`;
     if (normalizedName && ownerKey) return `name:${normalizedName}::owners:${ownerKey}`;
     if (normalizedName) return `name:${normalizedName}`;
-    return `id:${String(actor?.id ?? actor?.uuid ?? randomID())}`;
+    return `id:${String(actor?.uuid ?? actorId ?? foundry.utils.randomID())}`;
   }
 
   static #getPossessionTrackedActors() {
