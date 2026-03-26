@@ -788,10 +788,18 @@ export class CardManager {
     }
 
     const hand = game.cards.get(handId);
+    if (actor?.system?.stats?.mort) {
+      ui.notifications?.warn?.("Ce personnage est mort.");
+      return;
+    }
+    if (actor?.system?.stats?.inconscient) {
+      ui.notifications?.warn?.("Ce personnage est inconscient.");
+      return;
+    }
     const skillData = actor.system?.competences?.[skillKey];
     const skillName = (skillKey.charAt(0).toUpperCase() + skillKey.slice(1)) + (skillData?.label ? ` (${skillData.label})` : "");
     const baseSkillValue = Number(skillData?.total ?? 0);
-    const malEnPointMod = actor?.getFlag?.("arcane15", "malEnPoint") ? -1 : 0;
+    const malEnPointMod = (actor?.system?.stats?.malEnPoint || actor?.getFlag?.("arcane15", "malEnPoint")) ? -1 : 0;
     const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
     const arcanaMods = ArcanaManager?.getSkillModifiers ? ArcanaManager.getSkillModifiers(actor, skillKey) : { net: 0, labels: [], consume: [] };
     const skillValue = baseSkillValue + malEnPointMod + Number(arcanaMods?.net || 0);

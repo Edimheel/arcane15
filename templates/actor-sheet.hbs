@@ -15,12 +15,31 @@
 
     <section class="stats-bar">
         <div class="stat-box"><label>DESTIN</label><input name="system.stats.destin" type="number" value="{{system.stats.destin}}"/></div>
-        <div class="stat-box"><label>VITALITÉ</label><input name="system.stats.vitalite" type="number" value="{{system.stats.vitalite}}"/></div>
+        <div class="stat-box">
+            <label>VITALITÉ</label>
+            <div style="display:flex;align-items:center;gap:4px;">
+                <input name="system.stats.vitalite" type="number" value="{{system.stats.vitalite}}"/>
+                <span>/</span>
+                <input name="system.stats.vitaliteMax" type="number" value="{{#if system.stats.vitaliteMax}}{{system.stats.vitaliteMax}}{{else}}{{system.stats.vitalite}}{{/if}}"/>
+            </div>
+        </div>
         <div class="stat-box"><label>BLESSURES</label><input name="system.stats.blessures" type="number" value="{{system.stats.blessures}}"/></div>
         <div class="vl"></div>
         <div class="stat-box"><label>SOMME</label><input name="system.stats.sommeMax" type="number" value="{{system.stats.sommeMax}}"/></div>
         <div class="stat-box"><label>INITIATIVE</label><input name="system.stats.initiative" type="number" value="{{system.stats.initiative}}"/></div>
         <div class="stat-box"><label>PROTECTION</label><input name="system.stats.protection" type="number" value="{{system.stats.protection}}"/></div>
+    </section>
+
+    <section style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:8px 0 12px 0;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            {{#if system.stats.mort}}<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#7f1d1d;color:#fff;font-weight:900;font-size:11px;">MORT</span>{{/if}}
+            {{#if system.stats.malEnPoint}}<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#b91c1c;color:#fff;font-weight:900;font-size:11px;">MAL EN POINT</span>{{/if}}
+            {{#if system.stats.dangerMort}}<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#7c2d12;color:#fff;font-weight:900;font-size:11px;">DANGER DE MORT{{#if system.stats.dangerMortRounds}} ({{system.stats.dangerMortRounds}}){{/if}}</span>{{/if}}
+            {{#if system.stats.inconscient}}<span style="display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#334155;color:#fff;font-weight:900;font-size:11px;">INCONSCIENT{{#if system.stats.inconscientRounds}} ({{system.stats.inconscientRounds}}){{/if}}</span>{{/if}}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button type="button" class="axv-first-aid-action">Premiers soins</button>
+        </div>
     </section>
 
     <nav class="sheet-tabs tabs">

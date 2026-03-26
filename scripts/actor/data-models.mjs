@@ -42,7 +42,14 @@ export class PersonnageData extends foundry.abstract.TypeDataModel {
       stats: new fields.SchemaField({
         destin: new fields.NumberField({initial: 0, integer: true}),
         vitalite: new fields.NumberField({initial: 10, integer: true}),
-        blessures: new fields.NumberField({initial: 0, integer: true}),
+        vitaliteMax: new fields.NumberField({initial: 0, integer: true, min: 0}),
+        blessures: new fields.NumberField({initial: 0, integer: true, min: 0}),
+        malEnPoint: new fields.BooleanField({initial: false}),
+        dangerMort: new fields.BooleanField({initial: false}),
+        dangerMortRounds: new fields.NumberField({initial: 0, integer: true, min: 0}),
+        inconscient: new fields.BooleanField({initial: false}),
+        inconscientRounds: new fields.NumberField({initial: 0, integer: true, min: 0}),
+        mort: new fields.BooleanField({initial: false}),
         // Champs ajoutés pour le Header
         sommeMax: new fields.NumberField({initial: 12, integer: true}), 
         initiative: new fields.NumberField({initial: 0, integer: true}),

@@ -840,7 +840,7 @@ export class ArcanaManager {
   }
 
   static async #handleSystemSocket(data) {
-    if (!data || !["justiceApplyDamage", "justiceApplyDamageResult", "gmOnlyChat"].includes(String(data.axvType ?? ""))) return;
+    if (!data || !["justiceApplyDamage", "justiceApplyDamageResult", "gmOnlyChat", "fixedSkillRollRequest", "fixedSkillRollResult"].includes(String(data.axvType ?? ""))) return;
 
     if (data.axvType === "justiceApplyDamageResult") {
       if (String(data.toUserId ?? "") !== String(game.user?.id ?? "")) return;
@@ -850,6 +850,55 @@ export class ArcanaManager {
       ArcanaManager.#socketRequests.delete(String(data.reqId ?? ""));
       if (data.ok) pending.resolve(data);
       else pending.reject(new Error(String(data.error || "GM damage request failed")));
+      return;
+    }
+
+    if (data.axvType === "fixedSkillRollResult") {
+      if (String(data.toUserId ?? "") !== String(game.user?.id ?? "")) return;
+      const pending = ArcanaManager.#socketRequests.get(String(data.reqId ?? ""));
+      if (!pending) return;
+      clearTimeout(pending.timeoutId);
+      ArcanaManager.#socketRequests.delete(String(data.reqId ?? ""));
+      if (data.ok) pending.resolve(data.result ?? null);
+      else pending.reject(new Error(String(data.error || "Player fixed skill request failed")));
+      return;
+    }
+
+    if (data.axvType === "fixedSkillRollRequest") {
+      if (String(data.toUserId ?? "") !== String(game.user?.id ?? "")) return;
+      try {
+        const rollActor = data.actorId ? (game.actors?.get?.(String(data.actorId)) ?? null) : null;
+        if (!rollActor) throw new Error("Actor not found for fixed skill request");
+        const result = await ArcanaManager.#rollFixedSkill(rollActor, String(data.skillKey || ""), {
+          title: data.options?.title,
+          subtitle: data.options?.subtitle,
+          difficulty: Number(data.options?.difficulty || 0),
+          chatTitle: data.options?.chatTitle,
+          chatNote: data.options?.chatNote,
+          bonus: Number(data.options?.bonus || 0),
+          whisper: Array.isArray(data.options?.whisper) ? data.options.whisper : null,
+          blind: !!data.options?.blind,
+          useStandardSkillHandSubtitle: !!data.options?.useStandardSkillHandSubtitle,
+          gmOnlyChat: !!data.options?.gmOnlyChat,
+          delegateToOwner: false,
+          playedByOwner: false
+        });
+        game.socket.emit("system.arcane15", {
+          axvType: "fixedSkillRollResult",
+          reqId: data.reqId,
+          toUserId: data.requestUserId,
+          ok: true,
+          result
+        });
+      } catch (error) {
+        game.socket.emit("system.arcane15", {
+          axvType: "fixedSkillRollResult",
+          reqId: data.reqId,
+          toUserId: data.requestUserId,
+          ok: false,
+          error: error?.message ?? String(error)
+        });
+      }
       return;
     }
 
@@ -882,8 +931,7 @@ export class ArcanaManager {
       if (!targetActor && data.actorId) targetActor = game.actors?.get?.(data.actorId) ?? null;
       if (!targetActor) throw new Error("Target actor not found");
 
-      const current = Number(targetActor.system?.stats?.vitalite ?? 0);
-      await targetActor.update({ "system.stats.vitalite": Math.max(0, current - amount) });
+      await game.arcane15?.combat?.applyVitalityDamage?.(targetActor, amount, { sourceLabel: "La Justice" });
 
       game.socket.emit("system.arcane15", {
         axvType: "justiceApplyDamageResult",
@@ -928,6 +976,50 @@ export class ArcanaManager {
         sceneId,
         tokenId: tokenDoc?.id ?? null,
         amount: Math.max(0, Number(amount ?? 0))
+      });
+    });
+  }
+
+  static async #requestFixedSkillRollByOwner(actor, skillKey, options = {}) {
+    const candidateOwners = (game.users ?? []).filter(user => {
+      if (!user?.active || user?.isGM) return false;
+      try {
+        return !!actor?.testUserPermission?.(user, CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER);
+      } catch (_) {
+        return false;
+      }
+    });
+    const ownerUser = candidateOwners[0] ?? null;
+    if (!ownerUser) return null;
+
+    const reqId = `fixed-skill-${Date.now()}-${++ArcanaManager.#socketRequestSeq}`;
+    return await new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        ArcanaManager.#socketRequests.delete(reqId);
+        reject(new Error("Le joueur n'a pas répondu au jet critique."));
+      }, 120000);
+
+      ArcanaManager.#socketRequests.set(reqId, { resolve, reject, timeoutId });
+
+      game.socket.emit("system.arcane15", {
+        axvType: "fixedSkillRollRequest",
+        reqId,
+        requestUserId: game.user?.id ?? null,
+        toUserId: ownerUser.id,
+        actorId: actor?.id ?? null,
+        skillKey,
+        options: {
+          title: options.title,
+          subtitle: options.subtitle,
+          difficulty: Number(options.difficulty || 0),
+          chatTitle: options.chatTitle,
+          chatNote: options.chatNote,
+          bonus: Number(options.bonus || 0),
+          whisper: Array.isArray(options.whisper) ? options.whisper : null,
+          blind: !!options.blind,
+          useStandardSkillHandSubtitle: !!options.useStandardSkillHandSubtitle,
+          gmOnlyChat: !!options.gmOnlyChat
+        }
       });
     });
   }
@@ -2371,11 +2463,12 @@ export class ArcanaManager {
         if (!result) return;
         const lost = Number(writableActor.getFlag?.('arcane15', 'lastDamage') ?? 0);
         const gain = result.success ? lost : Math.floor(lost / 2);
+        let healed = 0;
         if (gain > 0) {
-          const currentVit = Number(writableActor.system?.stats?.vitalite ?? 0);
-          await writableActor.update({ 'system.stats.vitalite': currentVit + gain });
+          const healResult = await game.arcane15?.combat?.applyVitalityHealing?.(writableActor, gain, { sourceLabel: atout.name });
+          healed = Number(healResult?.healed ?? gain);
         }
-        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : ${writableActor.name} récupère <strong>${gain}</strong> point(s) de Vitalité.</div></div>` });
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : ${writableActor.name} récupère <strong>${healed}</strong> point(s) de Vitalité.</div></div>` });
         break;
       }
       case 'kill-bill':
@@ -2420,16 +2513,17 @@ export class ArcanaManager {
         break;
       }
       case 'boite-de-chocolats': {
-        const actors = (game.actors?.contents ?? []).filter(a => a.type === 'personnage' && a.hasPlayerOwner && !a.getFlag?.('arcane15', 'malEnPoint'));
+        const actors = (game.actors?.contents ?? []).filter(a => a.type === 'personnage' && a.hasPlayerOwner && !(a.system?.stats?.malEnPoint || a.getFlag?.('arcane15', 'malEnPoint')));
         const parts = [];
         for (const ally of actors) {
           const draw = await ArcanaManager.#drawTemporaryCard(ally, `${atout.name} — soin`);
           const gain = Number(draw?.value || 0);
+          let healed = 0;
           if (gain > 0) {
-            const currentVit = Number(ally.system?.stats?.vitalite ?? 0);
-            await ally.update({ 'system.stats.vitalite': currentVit + gain });
+            const healResult = await game.arcane15?.combat?.applyVitalityHealing?.(ally, gain, { sourceLabel: atout.name });
+            healed = Number(healResult?.healed ?? gain);
           }
-          parts.push(`${ally.name} +${gain}`);
+          parts.push(`${ally.name} +${healed}`);
         }
         await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : ${parts.join(' • ')}</div></div>` });
         break;
@@ -2677,8 +2771,7 @@ export class ArcanaManager {
             const directWritable = game.user?.isGM || target?.isOwner || (!target?.isToken && target?.canUserModify?.(game.user, "update"));
 
             if (directWritable) {
-              const current = Number(target.system?.stats?.vitalite ?? 0);
-              await target.update({ "system.stats.vitalite": Math.max(0, current - amount) });
+              await game.arcane15?.combat?.applyVitalityDamage?.(target, amount, { sourceLabel: item.name, attackerActor: actor });
             } else {
               console.debug("[ARCANE XV][ARCANA] justice damage delegated to GM", {
                 sourceActor: actor?.name ?? null,
@@ -3506,13 +3599,38 @@ Héroïque : ${heroicText}">
     });
   }
 
-  static async #rollFixedSkill(actor, skillKey, { title, subtitle, difficulty, chatTitle, chatNote, bonus = 0, whisper = null, blind = false, customChatContent = null, useStandardSkillHandSubtitle = false, gmOnlyChat = false } = {}) {
+  static async #rollFixedSkill(actor, skillKey, { title, subtitle, difficulty, chatTitle, chatNote, bonus = 0, whisper = null, blind = false, customChatContent = null, useStandardSkillHandSubtitle = false, gmOnlyChat = false, playedByOwner = false, delegateToOwner = true } = {}) {
     CardManager.ensureSocket();
 
     const speakerActor = actor ?? null;
     const writableActor = ArcanaManager.#getWritableActor(actor) ?? actor;
     const displayActor = speakerActor ?? writableActor;
     const handActor = writableActor;
+
+    if (playedByOwner && delegateToOwner !== false) {
+      const ownerUser = (game.users ?? []).find(user => {
+        if (!user?.active || user?.isGM || String(user.id) === String(game.user?.id)) return false;
+        try {
+          return !!handActor?.testUserPermission?.(user, CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER);
+        } catch (_) {
+          return false;
+        }
+      });
+      if (ownerUser) {
+        return await ArcanaManager.#requestFixedSkillRollByOwner(handActor, skillKey, {
+          title,
+          subtitle,
+          difficulty,
+          chatTitle,
+          chatNote,
+          bonus,
+          whisper,
+          blind,
+          useStandardSkillHandSubtitle,
+          gmOnlyChat
+        });
+      }
+    }
 
     let handId = handActor.getFlag("arcane15", "hand");
     if (!handId || !game.cards.get(handId)) {
@@ -3529,7 +3647,7 @@ Héroïque : ${heroicText}">
     const skillData = handActor.system?.competences?.[skillKey];
     const skillName = `${capitalized(skillKey)}${skillData?.label ? ` (${skillData.label})` : ""}`;
     const baseSkillValue = Number(skillData?.total ?? 0);
-    const malEnPointMod = handActor?.getFlag?.("arcane15", "malEnPoint") ? -1 : 0;
+    const malEnPointMod = (handActor?.system?.stats?.malEnPoint || handActor?.getFlag?.("arcane15", "malEnPoint")) ? -1 : 0;
     const arcanaMods = ArcanaManager.getSkillModifiers(handActor, skillKey);
     const skillValue = baseSkillValue + malEnPointMod + Number(arcanaMods?.net || 0) + Number(bonus || 0);
 
@@ -3742,6 +3860,14 @@ Héroïque : ${heroicText}">
         }
       });
     });
+  }
+
+  static async rollFixedSkill(actor, skillKey, options = {}) {
+    return ArcanaManager.#rollFixedSkill(actor, skillKey, options);
+  }
+
+  static async drawTemporaryCard(actor, label = "Pioche d’arcane") {
+    return ArcanaManager.#drawTemporaryCard(actor, label);
   }
 
   static debugPossessionTracker() {

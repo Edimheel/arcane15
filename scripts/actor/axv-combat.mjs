@@ -19,6 +19,7 @@ export class CombatManager {
 
   // Initiative MJ only: sessionId -> initiative session
   static #gmInitSessions = new Map();
+  static #pendingDestinyPrompts = new Map();
 
   
 
@@ -159,6 +160,15 @@ export class CombatManager {
     if (data.type === "axvCombat:close") {
       return CombatManager.#clientClose(data);
     }
+
+    if (data.type === "axvCombat:destinyPrompt") {
+      return CombatManager.#clientOpenDestinyPrompt(data);
+    }
+
+    if (data.type === "axvCombat:destinyPromptResult") {
+      if (!game.user.isGM) return;
+      return CombatManager.#gmReceiveDestinyPromptResult(data);
+    }
   }
 
   // ---------------------------
@@ -166,6 +176,30 @@ export class CombatManager {
   // ---------------------------
   static async openAttackFromWeapon(attackerActor, weaponKey) {
     CombatManager.ensureSocket();
+
+    try {
+      for (const [id, dlg] of CombatManager.#clientDialogs.entries()) {
+        if (!dlg || dlg._state < 0 || dlg.rendered === false) CombatManager.#clientDialogs.delete(id);
+      }
+      for (const [key, st] of Array.from(CombatManager.#clientState.entries())) {
+        if (!st) {
+          CombatManager.#clientState.delete(key);
+          continue;
+        }
+        if (String(key).startsWith('init:')) continue;
+        const dlgId = st?.dialogId;
+        const dlg = dlgId ? CombatManager.#clientDialogs.get(dlgId) : null;
+        try { if (st) st.allowClose = true; } catch (_) {}
+        try { await dlg?.close?.(); } catch (_) {}
+        if (dlgId) CombatManager.#clientDialogs.delete(dlgId);
+        CombatManager.#clientState.delete(key);
+      }
+      for (const [id, dlg] of Array.from(CombatManager.#clientDialogs.entries())) {
+        if (!String(id).startsWith('axv-combat-')) continue;
+        try { await dlg?.close?.(); } catch (_) {}
+        CombatManager.#clientDialogs.delete(id);
+      }
+    } catch (_) {}
 
     const targets = Array.from(game.user.targets || []);
     const targetToken = targets?.[0] || null;
@@ -1261,12 +1295,56 @@ export class CombatManager {
     await CombatManager.#safeInitDecks(actor);
   }
 
-  static #resetRoundState(session) {
+  static async #resetRoundState(session) {
     for (const role of ["attacker", "defender"]) {
       session.picks[role] = { attack: null, defense: null, locked: false, ready: false, played: [], primes: [], penalites: [] };
     }
     session.resolved = { done: false, revealed: false, result: null };
     session.round = Number(session.round || 1) + 1;
+
+    for (const side of ["attacker", "defender"]) {
+      try {
+        const actorId = side === "attacker" ? session.attacker.actorId : session.defender.actorId;
+        const tokenId = side === "attacker" ? session.attacker.tokenId : session.defender.tokenId;
+        const actor = CombatManager.#actorFromCombatant({ actorId, tokenId, sceneId: session.sceneId });
+        if (!actor) continue;
+
+        const stats = actor.system?.stats || {};
+        const updates = {};
+
+        if (stats.inconscient && Number(stats.inconscientRounds || 0) > 0) {
+          const next = Math.max(0, Number(stats.inconscientRounds || 0) - 1);
+          updates["system.stats.inconscientRounds"] = next;
+          if (next === 0) updates["system.stats.inconscient"] = false;
+        }
+
+        if (stats.dangerMort && Number(stats.dangerMortRounds || 0) > 0) {
+          const next = Math.max(0, Number(stats.dangerMortRounds || 0) - 1);
+          updates["system.stats.dangerMortRounds"] = next;
+          if (next === 0) {
+            updates["system.stats.dangerMort"] = false;
+            updates["system.stats.mort"] = true;
+          }
+        }
+
+        if (Object.keys(updates).length) {
+          await actor.update(updates, { axvVitalitySync: true });
+          if (updates["system.stats.mort"]) {
+            await ChatMessage.create({
+              speaker: ChatMessage.getSpeaker({ actor }),
+              content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${actor.name}</strong> succombe à ses blessures.</div></div>`
+            });
+          } else if (updates["system.stats.inconscient"] === false) {
+            await ChatMessage.create({
+              speaker: ChatMessage.getSpeaker({ actor }),
+              content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${actor.name}</strong> reprend conscience.</div></div>`
+            });
+          }
+        }
+      } catch (error) {
+        console.warn("[ARCANE XV][COMBAT] critical state round tick failed", error);
+      }
+    }
   }
 
   static async #gmPickCard(data) {
@@ -1463,8 +1541,10 @@ export class CombatManager {
 
       const attackVitalite = Number(attackActor?.system?.stats?.vitalite ?? 0);
       const defenseVitalite = Number(defenseActor?.system?.stats?.vitalite ?? 0);
-      if (attackVitalite <= 0) { atkAdj -= 1; atkStateMods.push('Mal en point -1'); }
-      if (defenseVitalite <= 0) { defAdj -= 1; defStateMods.push('Mal en point -1'); }
+      const attackMalEnPoint = !!(attackActor?.system?.stats?.malEnPoint || attackActor?.getFlag?.('arcane15', 'malEnPoint'));
+      const defenseMalEnPoint = !!(defenseActor?.system?.stats?.malEnPoint || defenseActor?.getFlag?.('arcane15', 'malEnPoint'));
+      if (attackMalEnPoint || attackVitalite <= 0) { atkAdj -= 1; atkStateMods.push('Mal en point -1'); }
+      if (defenseMalEnPoint || defenseVitalite <= 0) { defAdj -= 1; defStateMods.push('Mal en point -1'); }
 
       const attackRuntime = attackActor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
       const defenseRuntime = defenseActor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
@@ -1584,7 +1664,6 @@ export class CombatManager {
       try {
         const targetActor = exchange.defenderSide === 'attacker' ? attackerActor : defenderActor;
 
-        // Find token document for the target — needed for unlinked tokens
         let targetTokDoc = null;
         if (exchange.defenderSide === 'attacker') {
           targetTokDoc = attackerTokDoc || null;
@@ -1592,50 +1671,21 @@ export class CombatManager {
           targetTokDoc = tokDoc;
         }
 
-        const beforeVit = Number(targetActor?.system?.stats?.vitalite ?? 0);
-        const beforeBless = Number(targetActor?.system?.stats?.blessures ?? 0);
-
         console.log('[ARCANE XV][COMBAT][GM] applyDamage', {
           target: targetActor?.name,
           damage: exchange.damage,
-          beforeVit,
-          beforeBless,
           hasToken: !!targetTokDoc,
           actorId: targetActor?.id
         });
 
-        const updates = {};
-        if (beforeVit > 0) {
-          const afterVit = Math.max(0, beforeVit - exchange.damage);
-          updates['system.stats.vitalite'] = afterVit;
-          if (afterVit === 0) {
-            try { await targetActor.setFlag('arcane15', 'malEnPoint', true); } catch (_) {}
-            try { await targetActor.setFlag('arcane15', 'lastDamage', exchange.damage); } catch (_) {}
-          }
-        } else {
-          updates['system.stats.blessures'] = beforeBless + 1;
-          try { await targetActor.setFlag('arcane15', 'malEnPoint', true); } catch (_) {}
-          try { await targetActor.setFlag('arcane15', 'lastDamage', exchange.damage); } catch (_) {}
-        }
-
-        // Apply update: prefer token actor (for unlinked tokens), fallback to actor
-        if (targetTokDoc?.actor) {
-          await targetTokDoc.actor.update(updates);
-        } else {
-          await targetActor.update(updates);
-        }
-
-        const updatedActor = targetTokDoc?.actor || targetActor;
-        const afterVit = Number(updatedActor?.system?.stats?.vitalite ?? 0);
-        const afterBless = Number(updatedActor?.system?.stats?.blessures ?? 0);
-        console.log('[ARCANE XV][COMBAT][GM] applyDamage OK', {
-          target: targetActor?.name,
-          updates,
-          afterVit,
-          afterBless
+        const applied = await CombatManager.applyVitalityDamage(targetActor, exchange.damage, {
+          targetTokDoc,
+          sourceLabel: 'Combat',
+          attackerActor: exchange.attackerSide === 'attacker' ? attackerActor : defenderActor
         });
 
-        return { target: targetActor.name, beforeVit, beforeBless, updates, damage: exchange.damage };
+        console.log('[ARCANE XV][COMBAT][GM] applyDamage OK', applied);
+        return applied;
       } catch (e) {
         console.error('[ARCANE XV][COMBAT][GM] applyDamage FAILED', e, { exchange });
         return null;
@@ -1687,7 +1737,7 @@ export class CombatManager {
     }
 
     if (!session.ended) {
-      CombatManager.#resetRoundState(session);
+      await CombatManager.#resetRoundState(session);
       session.toast = 'Round terminé : 1 carte repiochée, joker vérifié, round suivant prêt.';
       await CombatManager.#safeInitDecks(attackerActor);
       await CombatManager.#safeInitDecks(defenderActor);
@@ -2103,6 +2153,17 @@ export class CombatManager {
       if (st) st.allowClose = true;
       await dlg.close();
     }
+    try {
+      CombatManager.#clientDialogs.delete(dialogId);
+      CombatManager.#clientState.delete(sessionId);
+      for (const [key, st] of CombatManager.#clientState.entries()) {
+        if (!String(key).startsWith('init:')) continue;
+        if (!String(key).includes(`:${sessionId}:`)) continue;
+        const dlgId = st?.dialogId;
+        if (dlgId) CombatManager.#clientDialogs.delete(dlgId);
+        CombatManager.#clientState.delete(key);
+      }
+    } catch (_) {}
   }
 
   // ---------------------------
@@ -2671,13 +2732,24 @@ if (!allowedSide || sideKey !== allowedSide) return;
     if (!session) return;
     session.ended = true;
     try {
-      const attackerActor = game.actors.get(session.attacker.actorId);
-      const defenderActor = game.actors.get(session.defender.actorId);
-      await attackerActor?.unsetFlag?.("arcane15", "lastInitiativeCombat");
-      await defenderActor?.unsetFlag?.("arcane15", "lastInitiativeCombat");
+      const attackerWorldActor = game.actors.get(session.attacker.actorId);
+      const defenderWorldActor = game.actors.get(session.defender.actorId);
+      const attackerTokDoc = CombatManager.#tokenDocFrom(session.sceneId, session.attacker.tokenId);
+      const defenderTokDoc = CombatManager.#tokenDocFrom(session.sceneId, session.defender.tokenId);
+      const attackerTokenActor = attackerTokDoc?.actor || null;
+      const defenderTokenActor = defenderTokDoc?.actor || null;
+      const extraActors = [];
+      for (const actorId of [session.attacker.actorId, session.defender.actorId]) {
+        const base = game.actors.get(actorId);
+        if (base) extraActors.push(base, ...(base.getActiveTokens?.().map(t => t.actor).filter(Boolean) || []));
+      }
+      for (const actor of [attackerWorldActor, defenderWorldActor, attackerTokenActor, defenderTokenActor, ...extraActors]) {
+        try { await actor?.unsetFlag?.("arcane15", "lastInitiativeCombat"); } catch (_) {}
+      }
     } catch (e) {
       console.warn("[ARCANE XV][COMBAT][GM] clear lastInitiativeCombat failed", e);
     }
+    try { CombatManager.#gmInitSessions.delete(sessionId); } catch (_) {}
     const recipients = new Set();
     if (session.attacker.userId) recipients.add(session.attacker.userId);
     for (const id of (session.defender.userIds || [])) recipients.add(id);
@@ -2693,6 +2765,55 @@ if (!allowedSide || sideKey !== allowedSide) return;
   static #activeGMId() {
     const gm = game.users.find(u => u.active && u.isGM) || game.users.find(u => u.isGM);
     return gm?.id || null;
+  }
+
+  static async #clientOpenDestinyPrompt(data) {
+    const { promptId, actorName, damage, sourceLabel = '', gmUserId = null } = data || {};
+    const accepted = await new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(!!value);
+      };
+      const dlg = new DialogV2({
+        window: { title: 'Annuler les dégâts ?' },
+        content: `
+          <div style="padding:10px 12px; line-height:1.5;">
+            <p><strong>${CombatManager.#esc(actorName || 'Personnage')}</strong> vient de subir <strong>${Number(damage || 0)}</strong> point${Number(damage || 0) > 1 ? 's' : ''} de dégât${Number(damage || 0) > 1 ? 's' : ''}${sourceLabel ? ` (${CombatManager.#esc(sourceLabel)})` : ''}.</p>
+            <p>Dépenser <strong>2 points de Destin</strong> pour annuler complètement ces dégâts ?</p>
+          </div>`,
+        buttons: [
+          { action: 'no', label: 'Garder les dégâts', default: true, callback: () => finish(false) },
+          { action: 'yes', label: 'Annuler les dégâts (-2 Destin)', callback: () => finish(true) }
+        ]
+      });
+      const originalClose = dlg.close.bind(dlg);
+      dlg.close = async (...args) => {
+        finish(false);
+        return originalClose(...args);
+      };
+      dlg.render({ force: true });
+    });
+
+    await CombatManager.#emit({
+      type: 'axvCombat:destinyPromptResult',
+      toUserId: gmUserId || CombatManager.#activeGMId(),
+      fromUserId: game.user.id,
+      promptId,
+      accepted
+    });
+  }
+
+  static async #gmReceiveDestinyPromptResult(data) {
+    const { promptId, accepted = false } = data || {};
+    const pending = promptId ? CombatManager.#pendingDestinyPrompts.get(promptId) : null;
+    if (!pending) return;
+    try {
+      pending.resolve(!!accepted);
+    } finally {
+      CombatManager.#pendingDestinyPrompts.delete(promptId);
+    }
   }
 
   // ---------------------------
@@ -2795,6 +2916,279 @@ if (!allowedSide || sideKey !== allowedSide) return;
       </div>`;
   }
 
+
+  static async applyVitalityHealing(targetActor, amount, { targetTokDoc = null, sourceLabel = "" } = {}) {
+    const heal = Math.max(0, Number(amount ?? 0));
+    if (!targetActor || heal <= 0) return null;
+
+    const docActor = targetTokDoc?.actor ?? targetActor;
+    const beforeVit = Number(docActor?.system?.stats?.vitalite ?? 0);
+    const maxVitRaw = Number(docActor?.system?.stats?.vitaliteMax ?? 0);
+    const afterVit = maxVitRaw > 0 ? Math.min(maxVitRaw, beforeVit + heal) : (beforeVit + heal);
+    const healed = Math.max(0, afterVit - beforeVit);
+
+    const updates = {
+      "system.stats.vitalite": afterVit
+    };
+
+    if (afterVit > 0) {
+      updates["system.stats.malEnPoint"] = false;
+      updates["system.stats.blessures"] = 0;
+      updates["system.stats.dangerMort"] = false;
+      updates["system.stats.dangerMortRounds"] = 0;
+      updates["system.stats.inconscient"] = false;
+      updates["system.stats.inconscientRounds"] = 0;
+      updates["system.stats.mort"] = false;
+    }
+
+    await docActor.update(updates, { axvVitalitySync: true });
+    try {
+      await docActor.setFlag("arcane15", "malEnPoint", false);
+      await docActor.setFlag("arcane15", "lastDamage", 0);
+    } catch (_) {}
+
+    return {
+      target: docActor.name,
+      sourceLabel,
+      beforeVit,
+      afterVit,
+      healed,
+      updates
+    };
+  }
+
+  static async applyVitalityDamage(targetActor, amount, { targetTokDoc = null, sourceLabel = "", attackerActor = null, allowDestinyCancel = true } = {}) {
+    const damage = Math.max(0, Number(amount ?? 0));
+    if (!targetActor || damage <= 0) return null;
+
+    const docActor = targetTokDoc?.actor ?? targetActor;
+    const beforeVit = Number(docActor?.system?.stats?.vitalite ?? 0);
+    const beforeBless = Number(docActor?.system?.stats?.blessures ?? 0);
+    const beforeMaxVit = Number(docActor?.system?.stats?.vitaliteMax ?? 0);
+    const beforeDanger = !!docActor?.system?.stats?.dangerMort;
+    const beforeInconscient = !!docActor?.system?.stats?.inconscient;
+
+    if (allowDestinyCancel !== false && !docActor?.system?.stats?.mort && docActor?.type === "personnage" && damage > 0) {
+      const destinRaw = docActor?.system?.stats?.destin;
+      let destinValue = Number(destinRaw ?? 0);
+      let destinPath = "system.stats.destin";
+      if (destinRaw && typeof destinRaw === "object") {
+        if (destinRaw.value != null) {
+          destinValue = Number(destinRaw.value ?? 0);
+          destinPath = "system.stats.destin.value";
+        } else if (destinRaw.current != null) {
+          destinValue = Number(destinRaw.current ?? 0);
+          destinPath = "system.stats.destin.current";
+        } else if (destinRaw.actuel != null) {
+          destinValue = Number(destinRaw.actuel ?? 0);
+          destinPath = "system.stats.destin.actuel";
+        }
+      }
+
+      if (destinValue >= 2) {
+        let shouldCancelDamage = false;
+        const ownerUsers = CombatManager.#resolveOwnerUsersForActor(docActor) || [];
+        const ownerPlayer = ownerUsers.find(u => u.active && !u.isGM) || null;
+        if (ownerPlayer && ownerPlayer.id !== game.user.id) {
+          const promptId = foundry.utils.randomID(16);
+          shouldCancelDamage = await new Promise((resolve) => {
+            const timeout = window.setTimeout(() => {
+              try { CombatManager.#pendingDestinyPrompts.delete(promptId); } catch (_) {}
+              resolve(false);
+            }, 120000);
+            CombatManager.#pendingDestinyPrompts.set(promptId, {
+              resolve: (value) => {
+                try { window.clearTimeout(timeout); } catch (_) {}
+                resolve(!!value);
+              }
+            });
+            CombatManager.#emit({
+              type: 'axvCombat:destinyPrompt',
+              toUserId: ownerPlayer.id,
+              fromUserId: game.user.id,
+              gmUserId: CombatManager.#activeGMId(),
+              promptId,
+              actorName: docActor.name,
+              damage,
+              sourceLabel
+            }).catch((error) => {
+              console.warn('[ARCANE XV][COMBAT] destiny prompt emit failed', error);
+              try { window.clearTimeout(timeout); } catch (_) {}
+              CombatManager.#pendingDestinyPrompts.delete(promptId);
+              resolve(false);
+            });
+          });
+        } else {
+          shouldCancelDamage = await new Promise((resolve) => {
+            const dlg = new DialogV2({
+              window: { title: "Annuler les dégâts ?" },
+              content: `
+                <div style="padding:10px 12px; line-height:1.5;">
+                  <p><strong>${CombatManager.#esc(docActor.name)}</strong> vient de subir <strong>${damage}</strong> point${damage > 1 ? "s" : ""} de dégât${damage > 1 ? "s" : ""}${sourceLabel ? ` (${CombatManager.#esc(sourceLabel)})` : ""}.</p>
+                  <p>Dépenser <strong>2 points de Destin</strong> pour annuler complètement ces dégâts ?</p>
+                </div>`,
+              buttons: [
+                { action: "no", label: "Garder les dégâts", default: true, callback: () => resolve(false) },
+                { action: "yes", label: "Annuler les dégâts (-2 Destin)", callback: () => resolve(true) }
+              ]
+            });
+            dlg.render({ force: true });
+          });
+        }
+
+        if (shouldCancelDamage) {
+          await docActor.update({ [destinPath]: Math.max(0, destinValue - 2) }, { axvVitalitySync: true });
+          return {
+            target: docActor?.name,
+            sourceLabel,
+            attackerActorId: attackerActor?.id ?? null,
+            beforeVit,
+            beforeBless,
+            afterVit: beforeVit,
+            afterBless: beforeBless,
+            updates: {},
+            damage: 0,
+            canceledDamage: damage,
+            kind: "destin_cancel",
+            statusNotes: [],
+            critical: null
+          };
+        }
+      }
+    }
+
+    const updates = {};
+    if (beforeMaxVit <= 0 && beforeVit > 0) updates["system.stats.vitaliteMax"] = beforeVit;
+
+    let kind = "none";
+    const statusNotes = [];
+
+    if (beforeVit > 0) {
+      const afterVit = Math.max(0, beforeVit - damage);
+      updates["system.stats.vitalite"] = afterVit;
+      kind = "vitalite";
+      if (afterVit === 0) {
+        updates["system.stats.malEnPoint"] = true;
+        updates["system.stats.blessures"] = 0;
+        updates["system.stats.mort"] = false;
+        updates["system.stats.dangerMort"] = false;
+        updates["system.stats.dangerMortRounds"] = 0;
+        updates["system.stats.inconscient"] = false;
+        updates["system.stats.inconscientRounds"] = 0;
+        kind = "vitalite_to_zero";
+        statusNotes.push(`${docActor.name} est mal en point.`);
+      }
+    } else {
+      updates["system.stats.vitalite"] = 0;
+      updates["system.stats.malEnPoint"] = true;
+      updates["system.stats.blessures"] = beforeBless + 1;
+      kind = "blessure";
+      statusNotes.push(`${docActor.name} subit une blessure critique (${beforeBless + 1}).`);
+    }
+
+    await docActor.update(updates, { axvVitalitySync: true });
+    try {
+      await docActor.setFlag("arcane15", "malEnPoint", !!(updates["system.stats.malEnPoint"] ?? docActor?.system?.stats?.malEnPoint ?? false));
+      await docActor.setFlag("arcane15", "lastDamage", damage);
+    } catch (_) {}
+
+    const updatedActor = targetTokDoc?.actor ?? targetActor;
+    const afterVit = Number(updatedActor?.system?.stats?.vitalite ?? updates["system.stats.vitalite"] ?? beforeVit);
+    const afterBless = Number(updatedActor?.system?.stats?.blessures ?? updates["system.stats.blessures"] ?? beforeBless);
+    const needsCriticalTests = (beforeVit > 0 && afterVit === 0) || beforeVit <= 0;
+
+    let critical = null;
+
+    if (needsCriticalTests && !updatedActor?.system?.stats?.mort) {
+      const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
+      const criticalMalus = afterBless > 0 ? (-2 * afterBless) : 0;
+      const difficulty = 8 + damage;
+      const criticalContext = beforeVit > 0
+        ? `${CombatManager.#esc(updatedActor.name)} tombe à <strong>0 Vitalité</strong> après avoir subi <strong>${damage} dégât${damage > 1 ? "s" : ""}</strong>${sourceLabel ? ` (${CombatManager.#esc(sourceLabel)})` : ""}.`
+        : `${CombatManager.#esc(updatedActor.name)} subit une <strong>nouvelle blessure</strong> alors qu'il est déjà <strong>mal en point</strong>.`;
+      let resistanceResult = null;
+      let volonteResult = null;
+
+      await ChatMessage.create({
+        whisper: game.users?.filter?.(u => u.isGM)?.map?.(u => u.id) ?? [],
+        blind: true,
+        speaker: ChatMessage.getSpeaker({ actor: updatedActor }),
+        content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>Tests critiques déclenchés</strong><br>${criticalContext}<br><br><strong>Le joueur concerné choisit une carte de sa main pour chaque jet.</strong><br><br><strong>Pourquoi ces jets ?</strong><br>• <strong>Résistance / ${difficulty}</strong> : pour éviter le <strong>danger de mort</strong>.<br>• <strong>Volonté / ${difficulty}</strong> : pour éviter l'<strong>inconscience</strong>.${criticalMalus ? `<br>• Malus blessures en cours : <strong>${criticalMalus}</strong>.` : ""}</div></div>`
+      });
+
+      if (ArcanaManager?.rollFixedSkill) {
+        resistanceResult = await ArcanaManager.rollFixedSkill(updatedActor, "resistance", {
+          title: `${updatedActor.name} — Test critique`,
+          subtitle: `Résistance / ${difficulty} — éviter le danger de mort`,
+          difficulty,
+          bonus: criticalMalus,
+          chatTitle: `${updatedActor.name} — Résistance critique`,
+          chatNote: `Cause : ${beforeVit > 0 ? "chute à 0 Vitalité" : "blessure supplémentaire à 0 Vitalité"}${sourceLabel ? ` • Source : ${sourceLabel}` : ""}${criticalMalus ? ` • Malus blessures ${criticalMalus}` : ""} • Échec : danger de mort.`,
+          useStandardSkillHandSubtitle: true,
+          playedByOwner: true,
+          gmOnlyChat: true
+        });
+        volonteResult = await ArcanaManager.rollFixedSkill(updatedActor, "volonte", {
+          title: `${updatedActor.name} — Test critique`,
+          subtitle: `Volonté / ${difficulty} — éviter l'inconscience`,
+          difficulty,
+          bonus: criticalMalus,
+          chatTitle: `${updatedActor.name} — Volonté critique`,
+          chatNote: `Cause : ${beforeVit > 0 ? "chute à 0 Vitalité" : "blessure supplémentaire à 0 Vitalité"}${sourceLabel ? ` • Source : ${sourceLabel}` : ""}${criticalMalus ? ` • Malus blessures ${criticalMalus}` : ""} • Échec : inconscience.`,
+          useStandardSkillHandSubtitle: true,
+          playedByOwner: true,
+          gmOnlyChat: true
+        });
+      }
+
+      const criticalUpdates = {};
+      if (resistanceResult && !resistanceResult.success) {
+        const draw = ArcanaManager?.drawTemporaryCard ? await ArcanaManager.drawTemporaryCard(updatedActor, `${updatedActor.name} — danger de mort`) : null;
+        const rounds = Math.max(1, Number(draw?.value || 1));
+        criticalUpdates["system.stats.dangerMort"] = true;
+        criticalUpdates["system.stats.dangerMortRounds"] = rounds;
+        if (!beforeDanger) statusNotes.push(`${updatedActor.name} est en danger de mort (${rounds} rounds).`);
+      }
+      if (volonteResult && !volonteResult.success) {
+        const draw = ArcanaManager?.drawTemporaryCard ? await ArcanaManager.drawTemporaryCard(updatedActor, `${updatedActor.name} — inconscience`) : null;
+        const rounds = Math.max(1, Number(draw?.value || 1));
+        criticalUpdates["system.stats.inconscient"] = true;
+        criticalUpdates["system.stats.inconscientRounds"] = rounds;
+        if (!beforeInconscient) statusNotes.push(`${updatedActor.name} est inconscient (${rounds} rounds).`);
+      }
+
+      if (Object.keys(criticalUpdates).length) {
+        await updatedActor.update(criticalUpdates, { axvVitalitySync: true });
+      }
+
+      critical = {
+        difficulty,
+        malus: criticalMalus,
+        resistance: resistanceResult,
+        volonte: volonteResult,
+        updates: criticalUpdates
+      };
+    }
+
+    return {
+      target: updatedActor?.name ?? docActor?.name,
+      sourceLabel,
+      attackerActorId: attackerActor?.id ?? null,
+      beforeVit,
+      beforeBless,
+      afterVit: Number(updatedActor?.system?.stats?.vitalite ?? afterVit),
+      afterBless: Number(updatedActor?.system?.stats?.blessures ?? afterBless),
+      updates: {
+        ...updates,
+        ...(critical?.updates || {})
+      },
+      damage,
+      kind,
+      statusNotes,
+      critical
+    };
+  }
+
   static #chatHtml(session, attackerActor, defenderActor) {
     const r = session.resolved?.result;
     if (!r) return `<div>Combat résolu.</div>`;
@@ -2829,18 +3223,24 @@ if (!allowedSide || sideKey !== allowedSide) return;
 
       let outcomeHtml = `<div style="color:#4b5563;font-weight:700;">Attaque parée / évitée</div>`;
       if (ex.hit) {
-        if (appliedEntry?.updates?.['system.stats.vitalite'] !== undefined) {
-          const beforeVit = Number(appliedEntry.beforeVit ?? 0);
-          const afterVit = Number(appliedEntry.updates['system.stats.vitalite'] ?? beforeVit);
-          const delta = Math.max(0, beforeVit - afterVit);
-          outcomeHtml = `<div style="color:#b91c1c;font-weight:900;">${defName} perd ${delta} point${delta > 1 ? 's' : ''} de Vitalité (${beforeVit} → ${afterVit})</div>`;
-        } else if (appliedEntry?.updates?.['system.stats.blessures'] !== undefined) {
-          const beforeBless = Number(appliedEntry.beforeBless ?? 0);
-          const afterBless = Number(appliedEntry.updates['system.stats.blessures'] ?? beforeBless);
+        if (appliedEntry?.kind === 'destin_cancel') {
+          const canceled = Number(appliedEntry?.canceledDamage ?? ex.damage ?? 0);
+          outcomeHtml = `<div style="color:#1d4ed8;font-weight:900;">${defName} annule ${canceled} point${canceled > 1 ? 's' : ''} de dégât${canceled > 1 ? 's' : ''} en dépensant 2 Destin</div>`;
+        } else if (appliedEntry?.kind === 'blessure' || appliedEntry?.updates?.['system.stats.blessures'] !== undefined) {
+          const beforeBless = Number(appliedEntry?.beforeBless ?? 0);
+          const afterBless = Number(appliedEntry?.afterBless ?? appliedEntry?.updates?.['system.stats.blessures'] ?? beforeBless);
           const delta = Math.max(0, afterBless - beforeBless);
           outcomeHtml = `<div style="color:#b91c1c;font-weight:900;">${defName} subit ${delta} blessure${delta > 1 ? 's' : ''} (${beforeBless} → ${afterBless})</div>`;
+        } else if (appliedEntry?.updates?.['system.stats.vitalite'] !== undefined) {
+          const beforeVit = Number(appliedEntry?.beforeVit ?? 0);
+          const afterVit = Number(appliedEntry?.afterVit ?? appliedEntry?.updates?.['system.stats.vitalite'] ?? beforeVit);
+          const delta = Math.max(0, beforeVit - afterVit);
+          outcomeHtml = `<div style="color:#b91c1c;font-weight:900;">${defName} perd ${delta} point${delta > 1 ? 's' : ''} de Vitalité (${beforeVit} → ${afterVit})</div>`;
         } else {
           outcomeHtml = `<div style="color:#b91c1c;font-weight:900;">${defName} subit ${Number(ex.damage || 0)} dégât${Number(ex.damage || 0) > 1 ? 's' : ''}</div>`;
+        }
+        if (Array.isArray(appliedEntry?.statusNotes) && appliedEntry.statusNotes.length) {
+          outcomeHtml += `<div style="margin-top:4px;color:#92400e;font-weight:700;">${appliedEntry.statusNotes.map(CombatManager.#esc).join('<br/>')}</div>`;
         }
       }
 
@@ -2914,7 +3314,7 @@ if (!allowedSide || sideKey !== allowedSide) return;
 
                 <div style="margin-top:6px;padding:8px 10px;border-top:1px solid #eee;background:${ex.hit ? '#f0ffe8' : '#f7f7f7'};font-size:15px;line-height:1.6;">
                   <div><strong>${ex.atkTotal}</strong> vs <strong>${ex.defTotal}</strong> → Marge <strong>${ex.margin}</strong> — ${ex.hit ? `<strong style="color:#236c2b;">TOUCHÉ</strong>` : `<strong style="color:#888;">PARRÉ / ÉVITÉ</strong>`}</div>
-                  ${ex.hit ? `<div style="font-size:18px;font-weight:900;color:#b91c1c;">Dégâts : ${ex.damage}${ex.damageMods?.length ? ` <span style="font-weight:500;color:#7a3d14;">(${CombatManager.#esc(ex.damageMods.join(', '))})</span>` : ''}</div>` : ''}
+                  ${ex.hit ? `<div style="font-size:18px;font-weight:900;color:#b91c1c;">Dégâts finaux : ${ex.damage}</div><div style="font-size:13px;color:#7a3d14;">Base : marge ${ex.margin}${ex.damageMods?.length ? ` • ${CombatManager.#esc(ex.damageMods.join(', '))}` : ""}</div>` : ''}
                 </div>
               </div>
             </details>
@@ -2967,6 +3367,45 @@ Hooks.once("ready", () => {
     game.arcane15.debugChat = () => AXV_debugChat("manual");
   } catch (e) {
     console.warn("[ARCANE XV][CHAT][READY][ERROR]", e);
+  }
+});
+
+Hooks.on("updateActor", async (actor, changes, options) => {
+  try {
+    if (options?.axvVitalitySync) return;
+    if (actor?.type !== "personnage") return;
+
+    const stats = actor.system?.stats || {};
+    const currentVit = Number(stats.vitalite ?? 0);
+    const currentMax = Number(stats.vitaliteMax ?? 0);
+    const statMalEnPoint = !!stats.malEnPoint;
+    const flagMalEnPoint = !!actor.getFlag?.("arcane15", "malEnPoint");
+
+    if (currentVit > 0 && (statMalEnPoint || flagMalEnPoint || Number(stats.blessures || 0) > 0 || stats.dangerMort || stats.inconscient || stats.mort)) {
+      await actor.update({
+        "system.stats.malEnPoint": false,
+        "system.stats.blessures": 0,
+        "system.stats.dangerMort": false,
+        "system.stats.dangerMortRounds": 0,
+        "system.stats.inconscient": false,
+        "system.stats.inconscientRounds": 0,
+        "system.stats.mort": false,
+      }, { axvVitalitySync: true });
+      try {
+        await actor.setFlag("arcane15", "malEnPoint", false);
+        await actor.setFlag("arcane15", "lastDamage", 0);
+      } catch (_) {}
+      return;
+    }
+
+
+    if (flagMalEnPoint !== statMalEnPoint) {
+      try {
+        await actor.setFlag("arcane15", "malEnPoint", statMalEnPoint);
+      } catch (_) {}
+    }
+  } catch (error) {
+    console.warn("[ARCANE XV][COMBAT] updateActor vitality sync failed", error);
   }
 });
 
