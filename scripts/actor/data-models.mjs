@@ -24,7 +24,8 @@ export class PersonnageData extends foundry.abstract.TypeDataModel {
       degats: new fields.StringField({initial: ""}),
       portee: new fields.StringField({initial: ""}),
       munitions: new fields.StringField({initial: ""}),
-      skillKey: new fields.StringField({initial: ""})
+      skillKey: new fields.StringField({initial: ""}),
+      equipe: new fields.BooleanField({initial: false})
     });
 
     return {

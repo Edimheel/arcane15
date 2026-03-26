@@ -968,7 +968,35 @@ export class ArcanaManager {
     if (!keys.size) {
       for (const key of DEFAULT_CHARACTER_ATOUTS_BY_ACTOR.get(normalizeText(actor.name)) ?? []) keys.add(key);
     }
-    return [...keys].map(k => PERSONAL_BY_KEY.get(k)).filter(Boolean);
+
+    const runtime = actor.getFlag?.("arcane15", "arcanaRuntime") || {};
+    const sessionFlags = actor.getFlag?.("arcane15", "personalAtoutSession") || {};
+
+    return [...keys].map(k => {
+      const def = PERSONAL_BY_KEY.get(k);
+      if (!def) return null;
+      const badges = [];
+      if (k === "remy-julienne") badges.push("Risque => 2 primes");
+      if (k === "kill-bill") badges.push("Mains nues : -1");
+      if (k === "jusquici-tout-va-bien" && sessionFlags?.jusquiciUsed) badges.push("Héroïque utilisé");
+      if (k === "actor-studio" && runtime?.pendingKnowledgeBonus?.value) badges.push(`Connaissance +${Number(runtime.pendingKnowledgeBonus.value)}`);
+      if (k === "monte-cristo" && runtime?.pendingVolonteBonus?.value) badges.push(`Volonté +${Number(runtime.pendingVolonteBonus.value)}`);
+      if (k === "dame-de-shanghai" && runtime?.audienceBonus?.value) badges.push(`Social +${Number(runtime.audienceBonus.value)}`);
+      if (k === "dame-de-shanghai" && runtime?.shanghaiBonus?.value && runtime?.shanghaiBonus?.targetName) badges.push(`${runtime.shanghaiBonus.targetName} : +${Number(runtime.shanghaiBonus.value)}`);
+      if (k === "marquise-de-merteuil" && runtime?.merteuilBonus?.value && runtime?.merteuilBonus?.targetName) badges.push(`${runtime.merteuilBonus.targetName} : +${Number(runtime.merteuilBonus.value)}`);
+      if (k === "marquise-de-merteuil" && runtime?.sharedMerteuilBonus?.value) badges.push(`Prime partagée +${Number(runtime.sharedMerteuilBonus.value)}`);
+      if (k === "larnacoeur" && runtime?.larnacoeurCombat?.targetName) badges.push(`Combat : ${runtime.larnacoeurCombat.targetName}`);
+      if (k === "keyser-soze" && runtime?.statuses?.keyserSozeUntargetable) badges.push("Ignore ciblage");
+      if (k === "boite-de-chocolats" && actor.getFlag?.("arcane15", "pendingDestinyRecovery")) badges.push("Récup. Destin en attente");
+      return {
+        key: def.key,
+        name: def.name,
+        currentEffect: def.currentEffect,
+        heroicEffect: def.heroicEffect,
+        heroicCost: 1,
+        statusBadges: badges
+      };
+    }).filter(Boolean);
   }
 
   static getActorArcana(actor) {
@@ -1027,14 +1055,68 @@ export class ArcanaManager {
     const labels = [];
     const consume = [];
     let net = 0;
+    const skill = String(skillKey || "").trim();
 
     const pendingTechnique = runtime?.pendingTechniqueBonus;
-    if (pendingTechnique?.value && String(skillKey || "").startsWith("technique")) {
+    if (pendingTechnique?.value && skill.startsWith("technique")) {
       const bonus = Number(pendingTechnique.value || 0);
       if (bonus) {
         net += bonus;
         labels.push(`${pendingTechnique.label || 'Bonus Technique'} +${bonus}`);
         consume.push("pendingTechniqueBonus");
+      }
+    }
+
+    const pendingKnowledge = runtime?.pendingKnowledgeBonus;
+    if (pendingKnowledge?.value && skill.startsWith("connaissance")) {
+      const bonus = Number(pendingKnowledge.value || 0);
+      if (bonus) {
+        net += bonus;
+        labels.push(`${pendingKnowledge.label || 'Bonus Connaissance'} +${bonus}`);
+        consume.push("pendingKnowledgeBonus");
+      }
+    }
+
+    const pendingVolonte = runtime?.pendingVolonteBonus;
+    if (pendingVolonte?.value && skill === "volonte") {
+      const bonus = Number(pendingVolonte.value || 0);
+      if (bonus) {
+        net += bonus;
+        labels.push(`${pendingVolonte.label || 'Bonus Volonté'} +${bonus}`);
+        consume.push("pendingVolonteBonus");
+      }
+    }
+
+    if (["eloquence", "autorite", "psychologie"].includes(skill) && runtime?.audienceBonus?.value) {
+      const bonus = Number(runtime.audienceBonus.value || 0);
+      if (bonus) {
+        net += bonus;
+        labels.push(`${runtime.audienceBonus.label || 'La dame de Shanghai'} +${bonus}`);
+      }
+    }
+
+    const selectedTarget = Array.from(game.user?.targets ?? [])[0]?.actor ?? null;
+    if (selectedTarget && ["eloquence", "autorite", "psychologie"].includes(skill) && runtime?.shanghaiBonus?.value && String(runtime?.shanghaiBonus?.targetId || "") === String(selectedTarget.id || "")) {
+      const bonus = Number(runtime.shanghaiBonus.value || 0);
+      if (bonus) {
+        net += bonus;
+        labels.push(`${runtime.shanghaiBonus.label || 'La dame de Shanghai'} +${bonus}`);
+      }
+    }
+
+    if (selectedTarget && ["eloquence", "autorite", "psychologie", "combat1", "combat2", "combat3"].includes(skill) && runtime?.merteuilBonus?.value && String(runtime?.merteuilBonus?.targetId || "") === String(selectedTarget.id || "")) {
+      const bonus = Number(runtime.merteuilBonus.value || 0);
+      if (bonus) {
+        net += bonus;
+        labels.push(`${runtime.merteuilBonus.label || 'Marquise de Merteuil'} +${bonus}`);
+      }
+    }
+
+    if (selectedTarget && ["eloquence", "autorite", "psychologie", "combat1", "combat2", "combat3"].includes(skill) && runtime?.sharedMerteuilBonus?.value && String(runtime?.sharedMerteuilBonus?.targetId || "") === String(selectedTarget.id || "")) {
+      const bonus = Number(runtime.sharedMerteuilBonus.value || 0);
+      if (bonus) {
+        net += bonus;
+        labels.push(`${runtime.sharedMerteuilBonus.label || 'Prime partagée'} +${bonus}`);
       }
     }
 
@@ -1062,7 +1144,8 @@ export class ArcanaManager {
 
   static getRollActionButtons(actor, skillKey, context = {}) {
     const options = ArcanaManager.#getSubstitutionArcana(actor, skillKey);
-    if (!options.length) return "";
+    const hasJusquici = String(skillKey || "") === "volonte" && ArcanaManager.getCharacterAtouts(actor).some(a => a.key === "jusquici-tout-va-bien");
+    if (!options.length && !hasJusquici) return "";
     const attrs = [
       `data-axv-roll-skill="${foundry.utils.escapeHTML(String(skillKey || ""))}"`,
       `data-axv-roll-difficulty="${Number(context.difficulty ?? 0)}"`,
@@ -1071,7 +1154,14 @@ export class ArcanaManager {
       `data-axv-roll-original-final="${Number(context.finalTotal ?? 0)}"`,
       `data-axv-roll-skill-name="${foundry.utils.escapeHTML(String(context.skillName || skillKey || ""))}"`
     ].join(" ");
-    return `<div class="axv-roll-actions">${options.map(item => `<button type="button" class="axv-roll-action-btn" data-axv-arcana-substitute data-actor-id="${actor.id}" data-item-id="${item.id}" ${attrs}>Substitution — ${foundry.utils.escapeHTML(item.name)}</button>`).join("")}</div>`;
+    const buttons = [];
+    for (const item of options) {
+      buttons.push(`<button type="button" class="axv-roll-action-btn" data-axv-arcana-substitute data-actor-id="${actor.id}" data-item-id="${item.id}" ${attrs}>Substitution — ${foundry.utils.escapeHTML(item.name)}</button>`);
+    }
+    if (hasJusquici) {
+      buttons.push(`<button type="button" class="axv-roll-action-btn" data-axv-personal-substitute data-actor-id="${actor.id}" data-atout-key="jusquici-tout-va-bien" ${attrs}>Substitution — Jusqu’ici tout va bien</button>`);
+    }
+    return `<div class="axv-roll-actions">${buttons.join("")}</div>`;
   }
 
   static #getSubstitutionArcana(actor, skillKey) {
@@ -1599,6 +1689,47 @@ export class ArcanaManager {
         });
       }
     }
+
+    const personalDefs = ArcanaManager.getCharacterAtouts(sheet.document);
+    root.querySelectorAll(".axv-character-atout-card").forEach((card, index) => {
+      const def = personalDefs[index];
+      if (!def) return;
+      let stateRow = card.querySelector('.axv-character-atout-state-row');
+      if (!stateRow) {
+        stateRow = document.createElement('div');
+        stateRow.className = 'axv-character-atout-state-row';
+        stateRow.style.display = 'flex';
+        stateRow.style.gap = '6px';
+        stateRow.style.flexWrap = 'wrap';
+        stateRow.style.margin = '0 0 8px 0';
+        card.insertBefore(stateRow, card.children[1] || null);
+      }
+      stateRow.innerHTML = (def.statusBadges || []).map(label => `<span style="display:inline-block;padding:3px 8px;border-radius:999px;font-weight:700;font-size:11px;background:rgba(30,120,70,.12);border:1px solid rgba(30,120,70,.35);">${foundry.utils.escapeHTML(String(label))}</span>`).join('');
+
+      if (!sheet.document.isOwner && !game.user?.isGM) return;
+      let actions = card.querySelector('.axv-character-atout-actions');
+      if (!actions) {
+        actions = document.createElement('div');
+        actions.className = 'axv-character-atout-actions';
+        actions.style.display = 'flex';
+        actions.style.flexWrap = 'wrap';
+        actions.style.gap = '8px';
+        actions.style.marginTop = '10px';
+        card.appendChild(actions);
+      }
+      actions.innerHTML = `<button type="button" class="axv-arcana-btn axv-personal-atout-current" data-atout-key="${def.key}">Effet courant</button><button type="button" class="axv-arcana-btn axv-personal-atout-heroic" data-atout-key="${def.key}">Effet héroïque (-1 Destin)</button>`;
+    });
+
+    root.querySelectorAll('.axv-personal-atout-current').forEach(btn => {
+      if (btn.dataset.axvBound) return;
+      btn.dataset.axvBound = '1';
+      btn.addEventListener('click', ev => { ev.preventDefault(); ev.stopPropagation(); ArcanaManager.useCharacterAtoutCurrent(sheet.document, ev.currentTarget.dataset.atoutKey); });
+    });
+    root.querySelectorAll('.axv-personal-atout-heroic').forEach(btn => {
+      if (btn.dataset.axvBound) return;
+      btn.dataset.axvBound = '1';
+      btn.addEventListener('click', ev => { ev.preventDefault(); ev.stopPropagation(); ArcanaManager.useCharacterAtoutHeroic(sheet.document, ev.currentTarget.dataset.atoutKey); });
+    });
   }
 
   static async handleActorSheetDrop(sheet, event) {
@@ -2089,6 +2220,261 @@ export class ArcanaManager {
     }, 120);
   }
 
+  static async useCharacterAtoutCurrent(actor, atoutKey) {
+    const writableActor = ArcanaManager.#getWritableActor(actor) ?? actor;
+    const atout = ArcanaManager.getCharacterAtouts(writableActor).find(entry => entry.key === atoutKey) ?? PERSONAL_BY_KEY.get(atoutKey) ?? null;
+    if (!writableActor || !atout) return;
+
+    const skills = writableActor.system?.competences ?? {};
+    const artComedieKey = Object.keys(skills).find(key => key.startsWith('art') && normalizeText(skills[key]?.label || '').includes('comedie'))
+      || Object.keys(skills).find(key => key.startsWith('art'))
+      || null;
+    const connaissanceKey = Object.keys(skills).find(key => key.startsWith('connaissance')) || null;
+    const target = Array.from(game.user?.targets ?? [])[0]?.actor ?? null;
+    const runtime = foundry.utils.deepClone(writableActor.getFlag?.('arcane15', 'arcanaRuntime') || {});
+
+    switch (atoutKey) {
+      case 'remy-julienne':
+        return ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : quand tu choisis la pénalité <strong>Risque</strong>, tu prends <strong>deux primes</strong> au lieu d’une.</div></div>` });
+      case 'kill-bill':
+        return ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : tes dégâts à mains nues passent à <strong>-1</strong> au lieu de <strong>-3</strong>.</div></div>` });
+      case 'jusquici-tout-va-bien':
+        return ui.notifications?.info?.('Utilise le bouton de substitution dans le message de jet de Volonté.');
+      case 'actor-studio':
+        if (!artComedieKey) return ui.notifications?.warn?.('Compétence Art (Comédie) introuvable.');
+        return CardManager.rollSkill(writableActor, artComedieKey);
+      case 'larnacoeur':
+      case 'keyser-soze': {
+        if (!target) return ui.notifications?.warn?.('Cible un interlocuteur pour utiliser cet atout.');
+        if (!artComedieKey) return ui.notifications?.warn?.('Compétence Art (Comédie) introuvable.');
+        const difficulty = Number(target.system?.competences?.volonte?.total ?? 0);
+        const result = await ArcanaManager.#rollFixedSkill(writableActor, artComedieKey, {
+          title: `${writableActor.name} — ${atout.name}`,
+          subtitle: `${atout.name} : opposition active simplifiée contre ${target.name}`,
+          difficulty,
+          chatTitle: `${writableActor.name} — ${atout.name}`,
+          chatNote: `Résolution contre ${target.name}`,
+          useStandardSkillHandSubtitle: true
+        });
+        if (!result) return;
+        const message = result.success
+          ? `${writableActor.name} prend l’ascendant sur ${target.name} grâce à <strong>${atout.name}</strong>.`
+          : `${target.name} résiste à <strong>${atout.name}</strong>.`;
+        return ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;">${message}</div></div>` });
+      }
+      case 'boite-de-chocolats':
+        return ui.notifications?.info?.('L’effet courant se déclenche après un échec si 1 point de Destin a été dépensé avant le test.');
+      case 'monte-cristo': {
+        let handId = writableActor.getFlag('arcane15', 'hand');
+        if (!handId || !game.cards.get(handId)) {
+          await CardManager.initActorDecks(writableActor);
+          handId = writableActor.getFlag('arcane15', 'hand');
+        }
+        const hand = game.cards.get(handId);
+        const aces = hand?.cards?.contents?.filter(card => !CardManager._isJoker(card) && Number(card.flags?.arcane15?.value ?? 0) === 1) ?? [];
+        if (!aces.length) return ui.notifications?.warn?.('Aucun as en main à relancer.');
+        const ace = aces[0];
+        const deck = game.cards.get(writableActor.getFlag('arcane15', 'deck'));
+        const pile = game.cards.get(writableActor.getFlag('arcane15', 'pile'));
+        if (!hand || !deck || !pile) return ui.notifications?.warn?.('Main ou paquet introuvable.');
+        await hand.pass(pile, [ace.id], { chatNotification: false });
+        await deck.deal([hand], 1, { chatNotification: false });
+        await CardManager._normalizeHandSize({ actor: writableActor, deck, hand, pile });
+        return ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : un as a été défaussé puis remplacé.</div></div>` });
+      }
+      case 'dame-de-shanghai': {
+        if (!target) return ui.notifications?.warn?.('Cible un interlocuteur pour utiliser cet atout.');
+        if (!artComedieKey) return ui.notifications?.warn?.('Compétence Art (Comédie) introuvable.');
+        const difficulty = Number(target.system?.competences?.volonte?.total ?? 0);
+        const result = await ArcanaManager.#rollFixedSkill(writableActor, artComedieKey, {
+          title: `${writableActor.name} — ${atout.name}`,
+          subtitle: `${atout.name} : opposition active simplifiée contre ${target.name}`,
+          difficulty,
+          chatTitle: `${writableActor.name} — ${atout.name}`,
+          chatNote: `Résolution contre ${target.name}`,
+          useStandardSkillHandSubtitle: true
+        });
+        if (!result) return;
+        if (!result.success) {
+          return ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;">${target.name} résiste à <strong>${atout.name}</strong>.</div></div>` });
+        }
+        runtime.shanghaiBonus = { targetId: target.id, targetName: target.name, value: Math.max(1, result.finalTotal - difficulty), label: atout.name };
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        ArcanaManager.refreshUIForActor(writableActor);
+        return ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : bonus de <strong>+${runtime.shanghaiBonus.value}</strong> contre ${target.name} en Éloquence, Autorité et Psychologie pour la scène.</div></div>` });
+      }
+      case 'marquise-de-merteuil': {
+        if (!target) return ui.notifications?.warn?.('Cible un interlocuteur pour utiliser cet atout.');
+        const difficulty = Number(target.system?.competences?.psychologie?.total ?? 0);
+        const result = await ArcanaManager.#rollFixedSkill(writableActor, 'psychologie', {
+          title: `${writableActor.name} — ${atout.name}`,
+          subtitle: `${atout.name} : opposition active simplifiée contre ${target.name}`,
+          difficulty,
+          chatTitle: `${writableActor.name} — ${atout.name}`,
+          chatNote: `Résolution contre ${target.name}`,
+          useStandardSkillHandSubtitle: true
+        });
+        if (!result) return;
+        if (!result.success) {
+          return ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;">${target.name} résiste à <strong>${atout.name}</strong>.</div></div>` });
+        }
+        runtime.merteuilBonus = { targetId: target.id, targetName: target.name, value: Math.max(1, result.finalTotal - difficulty), label: atout.name };
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        ArcanaManager.refreshUIForActor(writableActor);
+        return ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : bonus de <strong>+${runtime.merteuilBonus.value}</strong> contre ${target.name} pour les futures oppositions de la scène.</div></div>` });
+      }
+      default:
+        return ui.notifications?.info?.('Effet courant principalement passif ou contextuel.');
+    }
+  }
+
+  static async useCharacterAtoutHeroic(actor, atoutKey) {
+    const writableActor = ArcanaManager.#getWritableActor(actor) ?? actor;
+    const atout = ArcanaManager.getCharacterAtouts(writableActor).find(entry => entry.key === atoutKey) ?? PERSONAL_BY_KEY.get(atoutKey) ?? null;
+    if (!writableActor || !atout) return;
+
+    const cost = 1;
+    const destinyHolder = ArcanaManager.#pickDestinyHolder(actor, writableActor, cost);
+    const destinState = destinyHolder?.state ?? ArcanaManager.#getDestinyState(writableActor ?? actor);
+    if (destinState.value < cost) return ui.notifications?.warn?.('Pas assez de points de Destin.');
+
+    let spendResult = null;
+    for (const candidate of [destinyHolder?.actor, writableActor, actor].filter(Boolean)) {
+      try {
+        spendResult = await ArcanaManager.#spendDestiny(candidate, cost);
+        if (spendResult?.ok) break;
+      } catch (_) {}
+    }
+    if (!spendResult?.ok) return ui.notifications?.warn?.('Pas assez de points de Destin.');
+
+    const runtime = foundry.utils.deepClone(writableActor.getFlag?.('arcane15', 'arcanaRuntime') || {});
+    const sessionFlags = foundry.utils.deepClone(writableActor.getFlag?.('arcane15', 'personalAtoutSession') || {});
+    runtime.statuses ||= {};
+    const skills = writableActor.system?.competences ?? {};
+    const artComedieKey = Object.keys(skills).find(key => key.startsWith('art') && normalizeText(skills[key]?.label || '').includes('comedie'))
+      || Object.keys(skills).find(key => key.startsWith('art'))
+      || null;
+    const target = Array.from(game.user?.targets ?? [])[0]?.actor ?? null;
+
+    switch (atoutKey) {
+      case 'remy-julienne': {
+        if (!artComedieKey) return ui.notifications?.warn?.('Compétence Art (Comédie) introuvable.');
+        await writableActor.setFlag('arcane15', 'pendingDestinyRecovery', { source: atout.key, at: Date.now() });
+        const result = await ArcanaManager.#rollFixedSkill(writableActor, artComedieKey, {
+          title: `${writableActor.name} — ${atout.name}`,
+          subtitle: `${atout.name} : test d’Art (Comédie) / 12`,
+          difficulty: 12,
+          chatTitle: `${writableActor.name} — ${atout.name}`,
+          chatNote: 'Récupération de Vitalité',
+          useStandardSkillHandSubtitle: true
+        });
+        if (!result) return;
+        const lost = Number(writableActor.getFlag?.('arcane15', 'lastDamage') ?? 0);
+        const gain = result.success ? lost : Math.floor(lost / 2);
+        if (gain > 0) {
+          const currentVit = Number(writableActor.system?.stats?.vitalite ?? 0);
+          await writableActor.update({ 'system.stats.vitalite': currentVit + gain });
+        }
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : ${writableActor.name} récupère <strong>${gain}</strong> point(s) de Vitalité.</div></div>` });
+        break;
+      }
+      case 'kill-bill':
+        runtime.statuses.killBillExtraAttack = true;
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : ${writableActor.name} peut immédiatement porter une deuxième attaque au corps à corps.</div></div>` });
+        break;
+      case 'jusquici-tout-va-bien':
+        if (sessionFlags.jusquiciUsed) return ui.notifications?.warn?.('Effet héroïque déjà utilisé cette séance.');
+        sessionFlags.jusquiciUsed = true;
+        await writableActor.setFlag('arcane15', 'personalAtoutSession', sessionFlags);
+        await ArcanaManager.#createGMOnlyChatMessage({ actor: writableActor, content: `<div class="axv-arcana-gm-card"><div><strong>${atout.name}</strong> — ${writableActor.name}</div><div style="margin-top:6px;">Obtient un service illégal pour la séance (arme, drogue, etc.).</div></div>` });
+        break;
+      case 'larnacoeur': {
+        if (!target) return ui.notifications?.warn?.('Cible un adversaire pour utiliser cet effet héroïque.');
+        if (!artComedieKey) return ui.notifications?.warn?.('Compétence Art (Comédie) introuvable.');
+        await writableActor.setFlag('arcane15', 'pendingDestinyRecovery', { source: atout.key, at: Date.now() });
+        const difficulty = Number(target.system?.competences?.psychologie?.total ?? 0);
+        const result = await ArcanaManager.#rollFixedSkill(writableActor, artComedieKey, {
+          title: `${writableActor.name} — ${atout.name}`,
+          subtitle: `${atout.name} : opposition active simplifiée contre ${target.name}`,
+          difficulty,
+          chatTitle: `${writableActor.name} — ${atout.name}`,
+          chatNote: `Résolution contre ${target.name}`,
+          useStandardSkillHandSubtitle: true
+        });
+        if (!result) return;
+        if (result.success) {
+          runtime.larnacoeurCombat = { targetId: target.id, targetName: target.name, freePrimes: 2, label: atout.name };
+          await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        }
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;">${result.success ? `<strong>${atout.name}</strong> : deux primes gratuites contre ${target.name} au début de chaque round.` : `${target.name} résiste à <strong>${atout.name}</strong>.`}</div></div>` });
+        break;
+      }
+      case 'actor-studio': {
+        await writableActor.setFlag('arcane15', 'pendingDestinyRecovery', { source: atout.key, at: Date.now() });
+        const draw = await ArcanaManager.#drawTemporaryCard(writableActor, `${atout.name} — bonus Connaissance`);
+        if (!draw) return;
+        runtime.pendingKnowledgeBonus = { value: Number(draw.value || 0), label: atout.name };
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : bonus stocké pour le prochain test de Connaissance : <strong>+${draw.value}</strong>.</div></div>` });
+        break;
+      }
+      case 'boite-de-chocolats': {
+        const actors = (game.actors?.contents ?? []).filter(a => a.type === 'personnage' && a.hasPlayerOwner && !a.getFlag?.('arcane15', 'malEnPoint'));
+        const parts = [];
+        for (const ally of actors) {
+          const draw = await ArcanaManager.#drawTemporaryCard(ally, `${atout.name} — soin`);
+          const gain = Number(draw?.value || 0);
+          if (gain > 0) {
+            const currentVit = Number(ally.system?.stats?.vitalite ?? 0);
+            await ally.update({ 'system.stats.vitalite': currentVit + gain });
+          }
+          parts.push(`${ally.name} +${gain}`);
+        }
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : ${parts.join(' • ')}</div></div>` });
+        break;
+      }
+      case 'keyser-soze':
+        runtime.statuses.keyserSozeUntargetable = true;
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : les ennemis ne prennent plus ${writableActor.name} pour cible, sauf exception prévue par la règle.</div></div>` });
+        break;
+      case 'monte-cristo': {
+        await writableActor.setFlag('arcane15', 'pendingDestinyRecovery', { source: atout.key, at: Date.now() });
+        const draw = await ArcanaManager.#drawTemporaryCard(writableActor, `${atout.name} — bonus Volonté`);
+        if (!draw) return;
+        runtime.pendingVolonteBonus = { value: Number(draw.value || 0), label: atout.name };
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : bonus stocké pour le prochain test de Volonté : <strong>+${draw.value}</strong>.</div></div>` });
+        break;
+      }
+      case 'dame-de-shanghai': {
+        await writableActor.setFlag('arcane15', 'pendingDestinyRecovery', { source: atout.key, at: Date.now() });
+        const draw = await ArcanaManager.#drawTemporaryCard(writableActor, `${atout.name} — bonus social`);
+        if (!draw) return;
+        runtime.audienceBonus = { value: Number(draw.value || 0), label: atout.name };
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : bonus de scène aux tests d’Éloquence, de Psychologie et d’Autorité : <strong>+${draw.value}</strong>.</div></div>` });
+        break;
+      }
+      case 'marquise-de-merteuil': {
+        if (!runtime?.merteuilBonus?.value || !runtime?.merteuilBonus?.targetId) return ui.notifications?.warn?.('Aucune prime de Marquise de Merteuil à partager.');
+        const allies = (game.actors?.contents ?? []).filter(a => a.type === 'personnage' && a.hasPlayerOwner && a.id !== writableActor.id);
+        for (const ally of allies) {
+          const allyRuntime = foundry.utils.deepClone(ally.getFlag?.('arcane15', 'arcanaRuntime') || {});
+          allyRuntime.sharedMerteuilBonus = { ...runtime.merteuilBonus, label: atout.name };
+          await ally.setFlag('arcane15', 'arcanaRuntime', allyRuntime);
+        }
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>${atout.name}</strong> : la prime contre ${runtime.merteuilBonus.targetName} est partagée avec les compagnons.</div></div>` });
+        break;
+      }
+      default:
+        return ui.notifications?.info?.('Effet héroïque contextuel à gérer par le MJ.');
+    }
+
+    ArcanaManager.refreshUIForActor(writableActor);
+  }
+
   static async useHeroicEffect(actor, itemId) {
     const writableActor = ArcanaManager.#getWritableActor(actor) ?? actor;
     const item = ArcanaManager.#getWritableItem(actor, itemId);
@@ -2132,6 +2518,9 @@ export class ArcanaManager {
     if (!spendResult?.ok) {
       if (spendError) console.error("[ARCANE XV][ARCANA] unable to spend destiny", spendError);
       return ui.notifications?.warn?.("Pas assez de points de Destin.");
+    }
+    if (ArcanaManager.getCharacterAtouts(writableActor).some(a => a.key === 'boite-de-chocolats')) {
+      try { await writableActor.setFlag('arcane15', 'pendingDestinyRecovery', { source: item.system?.arcaneId || item.id, at: Date.now() }); } catch (_) {}
     }
     await item.update({ "system.lastHeroicAt": Date.now() });
     const refreshedActor = game.actors.get(writableActor.id) ?? writableActor;
@@ -3047,6 +3436,37 @@ Héroïque : ${heroicText}">
         });
       });
     });
+    root.querySelectorAll("[data-axv-personal-substitute]").forEach(btn => {
+      if (btn.dataset.axvBound) return;
+      btn.dataset.axvBound = "1";
+      btn.addEventListener("click", async ev => {
+        ev.preventDefault();
+        const t = ev.currentTarget;
+        const actor = game.actors.get(t.dataset.actorId);
+        if (!actor) return;
+        const draw = await ArcanaManager.#drawTemporaryCard(actor, `${t.dataset.atoutKey} — substitution`);
+        if (!draw) return;
+        const skillTotal = Number(t.dataset.axvRollSkillTotal ?? 0);
+        const oldCard = Number(t.dataset.axvRollOriginalCard ?? 0);
+        const oldFinal = Number(t.dataset.axvRollOriginalFinal ?? (skillTotal + oldCard));
+        const newFinal = skillTotal + Number(draw.value ?? 0);
+        const difficulty = Number(t.dataset.axvRollDifficulty ?? 0);
+        const skillName = String(t.dataset.axvRollSkillName || t.dataset.axvRollSkill || 'Test');
+        const dialog = new DialogV2({
+          window: { title: 'Jusqu’ici tout va bien — substitution' },
+          content: `<div><p><strong>${skillName}</strong></p><p>Carte initiale : <strong>+${oldCard}</strong> → total <strong>${oldFinal}</strong></p><p>Nouvelle carte piochée : <strong>+${draw.value}</strong> → total <strong>${newFinal}</strong></p><p>Choisis le résultat retenu.</p></div>`,
+          buttons: [
+            { action: 'keep-old', label: 'Garder l’ancienne', default: true },
+            { action: 'take-new', label: 'Prendre la nouvelle', callback: async () => {
+              const success = difficulty ? newFinal >= difficulty : null;
+              await actor.setFlag('arcane15', 'lastSkillTest', { skillKey: t.dataset.axvRollSkill, skillName, difficulty, success, timestamp: Date.now(), finalTotal: newFinal, originalFinal: oldFinal });
+              await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>Jusqu’ici tout va bien</strong> : nouvelle carte retenue. Nouveau total : <strong>${newFinal}</strong>${difficulty ? ` contre difficulté <strong>${difficulty}</strong>` : ''}.</div></div>` });
+            }}
+          ]
+        });
+        await dialog.render({ force: true });
+      });
+    });
   }
 
   static async #postActivationFailureForGM(actor, item, result) {
@@ -3276,6 +3696,27 @@ Héroïque : ${heroicText}">
             });
           } catch (flagError) {
             console.warn("[ARCANE XV][ARCANA] unable to store lastSkillTest", flagError);
+          }
+
+          try {
+            const pendingRecovery = handActor.getFlag?.('arcane15', 'pendingDestinyRecovery');
+            if (pendingRecovery) {
+              await handActor.unsetFlag('arcane15', 'pendingDestinyRecovery');
+              if (!success && ArcanaManager.getCharacterAtouts(handActor).some(a => a.key === 'boite-de-chocolats')) {
+                const recoveryDraw = await ArcanaManager.#drawTemporaryCard(handActor, 'La vie, c’est comme une boîte de chocolats — récupération de Destin');
+                const recoveryValue = Number(recoveryDraw?.value || 0);
+                if (recoveryValue >= 7) {
+                  const holder = ArcanaManager.#pickDestinyHolder(handActor, handActor, 0);
+                  const state = ArcanaManager.#getDestinyState(holder?.actor ?? handActor);
+                  await (holder?.actor ?? handActor).update({ [state.path]: Number(state.value || 0) + 1 });
+                  await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: handActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>La vie, c’est comme une boîte de chocolats</strong> : ${handActor.name} récupère <strong>1</strong> point de Destin.</div></div>` });
+                } else {
+                  await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: handActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;"><strong>La vie, c’est comme une boîte de chocolats</strong> : pas de récupération de Destin.</div></div>` });
+                }
+              }
+            }
+          } catch (recoveryError) {
+            console.warn('[ARCANE XV][ARCANA] boite-de-chocolats recovery failed', recoveryError);
           }
 
           if (arcanaMods?.consume?.length) {

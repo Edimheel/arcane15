@@ -1073,6 +1073,7 @@ export class CombatManager {
         name,
         degats,
         attackMod,
+        equipe: !!(extra?.equipe ?? w?.equipe ?? false),
         skillKey: directKeys[0] || null,
         competenceKey: String(extra?.competenceKey || w?.competenceKey || directKeys[0] || "").trim() || null,
         combatSkillKey: String(extra?.combatSkillKey || w?.combatSkillKey || directKeys[0] || "").trim() || null,
@@ -1095,9 +1096,20 @@ export class CombatManager {
       if (mergedProvided?.name) return mergedProvided;
     }
 
+    const combatData = actor?.system?.combat || {};
+
+    if (!preferredKey) {
+      for (const [key, w] of Object.entries(combatData)) {
+        if (!key.startsWith("arme")) continue;
+        if (!w?.equipe) continue;
+        const merged = mergeWeapon(key, w);
+        if (merged?.name) return merged;
+      }
+    }
+
     const keys = preferredKey
       ? [preferredKey, "arme1", "arme2", "arme3", "arme4"]
-      : [actor?.getFlag?.("arcane15", "lastWeaponKey"), "arme1", "arme2", "arme3", "arme4"];
+      : [];
 
     for (const key of keys) {
       if (!key) continue;
@@ -1105,16 +1117,9 @@ export class CombatManager {
       if (merged?.name) return merged;
     }
 
-    const combatData = actor?.system?.combat || {};
-    for (const [key, w] of Object.entries(combatData)) {
-      if (!key.startsWith("arme")) continue;
-      const merged = mergeWeapon(key, w);
-      if (merged?.name) return merged;
-    }
-
     if (game.user?.isGM) {
-      console.warn(`[ARCANE XV][COMBAT] ${actor?.name} n'a aucune arme configurée → Poings (-3). Configurez une arme sur la fiche.`);
-      ui.notifications?.info?.(`${actor?.name} n'a aucune arme configurée (combat.arme1…arme4). Il combattra à mains nues (Poings -3).`);
+      console.warn(`[ARCANE XV][COMBAT] ${actor?.name} n'a aucune arme équipée → Poings (-3). Cochez Équipé sur la fiche.`);
+      ui.notifications?.info?.(`${actor?.name} n'a aucune arme équipée. Il combattra à mains nues (Poings -3).`);
     }
     return {
       weaponKey: null,

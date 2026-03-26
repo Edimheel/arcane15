@@ -334,6 +334,35 @@ export class Arcane15ActorSheet extends HandlebarsApplicationMixin(ActorSheetV2)
       }
     });
 
+    // --- Arme équipée (une seule à la fois) ---
+    this.element.querySelectorAll(".axv-weapon-equipped").forEach(input => {
+      if (input.dataset.axvWeaponEquippedBound) return;
+      input.dataset.axvWeaponEquippedBound = "1";
+      input.addEventListener("change", async (ev) => {
+        try {
+          ev.stopPropagation();
+          const checkbox = ev.currentTarget;
+          const weaponKey = String(checkbox?.dataset?.weaponKey || "").trim();
+          if (!weaponKey) return;
+          const checked = !!checkbox.checked;
+          const updates = {};
+          for (const key of ["arme1", "arme2", "arme3", "arme4"]) {
+            updates[`system.combat.${key}.equipe`] = checked && key === weaponKey;
+          }
+          console.log("[ARCANE XV][SHEET][COMBAT] equipped weapon change", {
+            actor: this.document?.name,
+            weaponKey,
+            checked,
+            updates
+          });
+          await this.document.update(updates);
+        } catch (e) {
+          console.error("[ARCANE XV][SHEET][COMBAT][ERROR] equipped weapon change", e);
+          ui.notifications?.error?.("Erreur mise à jour arme équipée (voir console).");
+        }
+      });
+    });
+
     // --- Delegation combat icon (anti-doublon) ---
     if (!this._axvDelegatedClickBound) {
       this._axvDelegatedClickBound = this.#onDelegatedClick.bind(this);
@@ -665,6 +694,11 @@ export class Arcane15ActorSheet extends HandlebarsApplicationMixin(ActorSheetV2)
 
       if (!weapon || !weapon.nom) {
         ui.notifications?.error?.("Combat: arme introuvable (ou vide).");
+        return;
+      }
+
+      if (!weapon?.equipe) {
+        ui.notifications?.warn?.("Combat: coche d'abord Équipé sur cette arme.");
         return;
       }
 

@@ -94,6 +94,7 @@
                             <th>PORTÉE</th>
                             <th>MUN.</th>
                             <th>COMP.</th>
+                            <th class="center" style="width:70px;">ÉQUIPÉ</th>
                             <th class="center" style="width:40px;"></th>
                         </tr>
                     </thead>
@@ -112,8 +113,11 @@
                                 </select>
                             </td>
                             <td class="center">
+                                <input type="checkbox" class="axv-weapon-equipped" data-weapon-key="arme1" {{checked system.combat.arme1.equipe}} title="Arme équipée"/>
+                            </td>
+                            <td class="center">
                                 {{#if system.combat.arme1.nom}}
-                                  <a class="axv-weapon-attack" data-weapon-key="arme1" title="Lancer une attaque">
+                                  <a class="axv-weapon-attack" data-weapon-key="arme1" title="{{#if system.combat.arme1.equipe}}Lancer une attaque{{else}}Coche Équipé pour attaquer{{/if}}" {{#unless system.combat.arme1.equipe}}style="opacity:.35;pointer-events:auto;"{{/unless}}>
                                     <i class="fa-solid fa-swords"></i>
                                   </a>
                                 {{/if}}
@@ -134,8 +138,11 @@
                                 </select>
                             </td>
                             <td class="center">
+                                <input type="checkbox" class="axv-weapon-equipped" data-weapon-key="arme2" {{checked system.combat.arme2.equipe}} title="Arme équipée"/>
+                            </td>
+                            <td class="center">
                                 {{#if system.combat.arme2.nom}}
-                                  <a class="axv-weapon-attack" data-weapon-key="arme2" title="Lancer une attaque">
+                                  <a class="axv-weapon-attack" data-weapon-key="arme2" title="{{#if system.combat.arme2.equipe}}Lancer une attaque{{else}}Coche Équipé pour attaquer{{/if}}" {{#unless system.combat.arme2.equipe}}style="opacity:.35;pointer-events:auto;"{{/unless}}>
                                     <i class="fa-solid fa-swords"></i>
                                   </a>
                                 {{/if}}
@@ -156,8 +163,11 @@
                                 </select>
                             </td>
                             <td class="center">
+                                <input type="checkbox" class="axv-weapon-equipped" data-weapon-key="arme3" {{checked system.combat.arme3.equipe}} title="Arme équipée"/>
+                            </td>
+                            <td class="center">
                                 {{#if system.combat.arme3.nom}}
-                                  <a class="axv-weapon-attack" data-weapon-key="arme3" title="Lancer une attaque">
+                                  <a class="axv-weapon-attack" data-weapon-key="arme3" title="{{#if system.combat.arme3.equipe}}Lancer une attaque{{else}}Coche Équipé pour attaquer{{/if}}" {{#unless system.combat.arme3.equipe}}style="opacity:.35;pointer-events:auto;"{{/unless}}>
                                     <i class="fa-solid fa-swords"></i>
                                   </a>
                                 {{/if}}
@@ -178,8 +188,11 @@
                                 </select>
                             </td>
                             <td class="center">
+                                <input type="checkbox" class="axv-weapon-equipped" data-weapon-key="arme4" {{checked system.combat.arme4.equipe}} title="Arme équipée"/>
+                            </td>
+                            <td class="center">
                                 {{#if system.combat.arme4.nom}}
-                                  <a class="axv-weapon-attack" data-weapon-key="arme4" title="Lancer une attaque">
+                                  <a class="axv-weapon-attack" data-weapon-key="arme4" title="{{#if system.combat.arme4.equipe}}Lancer une attaque{{else}}Coche Équipé pour attaquer{{/if}}" {{#unless system.combat.arme4.equipe}}style="opacity:.35;pointer-events:auto;"{{/unless}}>
                                     <i class="fa-solid fa-swords"></i>
                                   </a>
                                 {{/if}}
