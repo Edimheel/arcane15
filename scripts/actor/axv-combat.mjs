@@ -209,22 +209,31 @@ export class CombatManager {
       return;
     }
 
-    const weapon = attackerActor?.system?.combat?.[weaponKey] || null;
-    const weaponName = String(weapon?.nom || "").trim();
-    if (!weaponName) {
-      ui.notifications.error("Combat: arme vide.");
-      console.warn("[ARCANE XV][COMBAT] empty weapon", { weaponKey, attacker: attackerActor?.name });
-      return;
+    const weapon = weaponKey ? (attackerActor?.system?.combat?.[weaponKey] || null) : null;
+    let attackerWeapon = null;
+    if (weaponKey) {
+      const weaponName = String(weapon?.nom || "").trim();
+      if (!weaponName) {
+        ui.notifications.error("Combat: arme vide.");
+        console.warn("[ARCANE XV][COMBAT] empty weapon", { weaponKey, attacker: attackerActor?.name });
+        return;
+      }
+      const weaponDamageStr = String(weapon?.degats || "").trim();
+      const attackMod = CombatManager.#parseSignedInt(weaponDamageStr);
+      attackerWeapon = CombatManager.#resolveWeaponForActor(attackerActor, weaponKey, {
+        weaponKey,
+        name: weaponName,
+        degats: weaponDamageStr,
+        attackMod
+      });
+    } else {
+      attackerWeapon = CombatManager.#resolveWeaponForActor(attackerActor);
+      if (!attackerWeapon?.name) {
+        ui.notifications.error("Combat: aucune arme utilisable.");
+        console.warn("[ARCANE XV][COMBAT] no usable weapon", { attacker: attackerActor?.name });
+        return;
+      }
     }
-
-    const weaponDamageStr = String(weapon?.degats || "").trim();
-    const attackMod = CombatManager.#parseSignedInt(weaponDamageStr);
-    const attackerWeapon = CombatManager.#resolveWeaponForActor(attackerActor, weaponKey, {
-      weaponKey,
-      name: weaponName,
-      degats: weaponDamageStr,
-      attackMod
-    });
 
     const sceneId = canvas.scene?.id || game.scenes?.active?.id;
     const reusable = CombatManager.#getReusableInitiative(attackerActor, targetToken, sceneId);
@@ -1151,15 +1160,18 @@ export class CombatManager {
       if (merged?.name) return merged;
     }
 
+    const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
+    const hasKillBill = ArcanaManager?.getCharacterAtouts ? ArcanaManager.getCharacterAtouts(actor).some(a => a.key === 'kill-bill') : false;
+    const poingsMod = hasKillBill ? -1 : -3;
     if (game.user?.isGM) {
-      console.warn(`[ARCANE XV][COMBAT] ${actor?.name} n'a aucune arme équipée → Poings (-3). Cochez Équipé sur la fiche.`);
-      ui.notifications?.info?.(`${actor?.name} n'a aucune arme équipée. Il combattra à mains nues (Poings -3).`);
+      console.warn(`[ARCANE XV][COMBAT] ${actor?.name} n'a aucune arme équipée → Poings (${poingsMod}). Cochez Équipé sur la fiche.`);
+      ui.notifications?.info?.(`${actor?.name} n'a aucune arme équipée. Il combattra à mains nues (Poings ${poingsMod}).`);
     }
     return {
       weaponKey: null,
       name: "Poings",
-      degats: "-3",
-      attackMod: -3,
+      degats: String(poingsMod),
+      attackMod: poingsMod,
       skillKey: null,
       competenceKey: null,
       combatSkillKey: null,
@@ -1444,8 +1456,26 @@ export class CombatManager {
       return;
     }
 
-    if ((pick.primes || []).length > 0 && (pick.penalites || []).length === 0) {
-      session.toast = "Choisis au moins une pénalité si tu prends une prime.";
+    const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
+    const roleInfo = role === 'attacker' ? session.attacker : session.defender;
+    const otherInfo = role === 'attacker' ? session.defender : session.attacker;
+    const roleTokDoc = CombatManager.#tokenDocFrom(session.sceneId, roleInfo?.tokenId);
+    const otherTokDoc = CombatManager.#tokenDocFrom(session.sceneId, otherInfo?.tokenId);
+    const roleActor = roleTokDoc?.actor || CombatManager.#actorFromCombatant({ actorId: roleInfo?.actorId, tokenId: roleInfo?.tokenId, sceneId: session.sceneId });
+    const otherActor = otherTokDoc?.actor || CombatManager.#actorFromCombatant({ actorId: otherInfo?.actorId, tokenId: otherInfo?.tokenId, sceneId: session.sceneId });
+    const runtime = roleActor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
+    const atoutKeys = roleActor && ArcanaManager?.getCharacterAtouts ? ArcanaManager.getCharacterAtouts(roleActor).map(a => a.key) : [];
+    const hasRemyJulienne = atoutKeys.includes('remy-julienne');
+    let freePrimes = 0;
+    if (runtime?.larnacoeurCombat?.freePrimes && (!runtime?.larnacoeurCombat?.targetId || String(runtime.larnacoeurCombat.targetId) === String(otherActor?.id || ''))) {
+      freePrimes += Number(runtime.larnacoeurCombat.freePrimes || 0);
+    }
+    const paidPrime = (pick.penalites || []).length > 0 ? 1 : 0;
+    const remyBonus = (hasRemyJulienne && (pick.penalites || []).includes('risque')) ? 1 : 0;
+    const allowedPrimes = paidPrime + freePrimes + remyBonus;
+
+    if ((pick.primes || []).length > allowedPrimes) {
+      session.toast = `Trop de primes sélectionnées : ${allowedPrimes} autorisée(s) pour ce tour.`;
       await CombatManager.#gmBroadcastState(sessionId);
       return;
     }
@@ -1533,30 +1563,39 @@ export class CombatManager {
       const defStateMods = [];
       let atkAdj = 0;
       let defAdj = 0;
+      let atkPPAdj = 0;
+      let defPPAdj = 0;
+      let atkStateAdj = 0;
+      let defStateAdj = 0;
 
-      if (attackPP.primes.includes('efficacite')) { atkAdj += 1; atkMods.push('Efficacité +1'); }
-      if (attackPP.penalites.includes('difficulte')) { atkAdj -= 1; atkMods.push('Difficulté -1'); }
-      if (defensePP.primes.includes('prudence')) { defAdj += 1; defMods.push('Prudence +1'); }
-      if (defensePP.penalites.includes('danger')) { defAdj -= 1; defMods.push('Danger -1'); }
+      if (attackPP.primes.includes('efficacite')) { atkAdj += 1; atkPPAdj += 1; atkMods.push('Efficacité +1'); }
+      if (attackPP.penalites.includes('difficulte')) { atkAdj -= 1; atkPPAdj -= 1; atkMods.push('Difficulté -1'); }
+      if (defensePP.primes.includes('prudence')) { defAdj += 1; defPPAdj += 1; defMods.push('Prudence +1'); }
+      if (defensePP.penalites.includes('danger')) { defAdj -= 1; defPPAdj -= 1; defMods.push('Danger -1'); }
 
       const attackVitalite = Number(attackActor?.system?.stats?.vitalite ?? 0);
       const defenseVitalite = Number(defenseActor?.system?.stats?.vitalite ?? 0);
       const attackMalEnPoint = !!(attackActor?.system?.stats?.malEnPoint || attackActor?.getFlag?.('arcane15', 'malEnPoint'));
       const defenseMalEnPoint = !!(defenseActor?.system?.stats?.malEnPoint || defenseActor?.getFlag?.('arcane15', 'malEnPoint'));
-      if (attackMalEnPoint || attackVitalite <= 0) { atkAdj -= 1; atkStateMods.push('Mal en point -1'); }
-      if (defenseMalEnPoint || defenseVitalite <= 0) { defAdj -= 1; defStateMods.push('Mal en point -1'); }
+      if (attackMalEnPoint || attackVitalite <= 0) { atkAdj -= 1; atkStateAdj -= 1; atkStateMods.push('Mal en point -1'); }
+      if (defenseMalEnPoint || defenseVitalite <= 0) { defAdj -= 1; defStateAdj -= 1; defStateMods.push('Mal en point -1'); }
 
       const attackRuntime = attackActor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
       const defenseRuntime = defenseActor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
       const attackAllTestsMalus = Number(attackRuntime?.allTestsMalus?.value || 0);
       const defenseAllTestsMalus = Number(defenseRuntime?.allTestsMalus?.value || 0);
-      if (attackAllTestsMalus) { atkAdj -= attackAllTestsMalus; atkStateMods.push(`${attackRuntime?.allTestsMalus?.label || 'Malus arcane'} -${attackAllTestsMalus}`); }
-      if (defenseAllTestsMalus) { defAdj -= defenseAllTestsMalus; defStateMods.push(`${defenseRuntime?.allTestsMalus?.label || 'Malus arcane'} -${defenseAllTestsMalus}`); }
+      if (attackAllTestsMalus) { atkAdj -= attackAllTestsMalus; atkStateAdj -= attackAllTestsMalus; atkStateMods.push(`${attackRuntime?.allTestsMalus?.label || 'Malus arcane'} -${attackAllTestsMalus}`); }
+      if (defenseAllTestsMalus) { defAdj -= defenseAllTestsMalus; defStateAdj -= defenseAllTestsMalus; defStateMods.push(`${defenseRuntime?.allTestsMalus?.label || 'Malus arcane'} -${defenseAllTestsMalus}`); }
+
+      const attackMerteuil = [attackRuntime?.merteuilBonus, attackRuntime?.sharedMerteuilBonus].find(b => b?.value && String(b?.targetId || '') === String(defenseActor?.id || '')) || null;
+      const defenseMerteuil = [defenseRuntime?.merteuilBonus, defenseRuntime?.sharedMerteuilBonus].find(b => b?.value && String(b?.targetId || '') === String(attackActor?.id || '')) || null;
+      if (attackMerteuil?.value) { atkAdj += Number(attackMerteuil.value || 0); atkStateAdj += Number(attackMerteuil.value || 0); atkStateMods.push(`${attackMerteuil.label || 'Marquise de Merteuil'} +${Number(attackMerteuil.value || 0)}`); }
+      if (defenseMerteuil?.value) { defAdj += Number(defenseMerteuil.value || 0); defStateAdj += Number(defenseMerteuil.value || 0); defStateMods.push(`${defenseMerteuil.label || 'Marquise de Merteuil'} +${Number(defenseMerteuil.value || 0)}`); }
 
       const attackDoublePrimes = !!attackRuntime?.statuses?.doublePrimes;
       const defenseDoublePrimes = !!defenseRuntime?.statuses?.doublePrimes;
-      if (attackDoublePrimes && attackPP.primes.includes('efficacite')) { atkAdj += 1; atkMods.push('Maison-dieu : Efficacité doublée'); }
-      if (defenseDoublePrimes && defensePP.primes.includes('prudence')) { defAdj += 1; defMods.push('Maison-dieu : Prudence doublée'); }
+      if (attackDoublePrimes && attackPP.primes.includes('efficacite')) { atkAdj += 1; atkPPAdj += 1; atkMods.push('Maison-dieu : Efficacité doublée'); }
+      if (defenseDoublePrimes && defensePP.primes.includes('prudence')) { defAdj += 1; defPPAdj += 1; defMods.push('Maison-dieu : Prudence doublée'); }
 
       const atkCardVal = attackCard?.isJoker ? 0 : Number(attackCard?.value ?? 0);
       const defCardVal = defenseCard?.isJoker ? 0 : Number(defenseCard?.value ?? 0);
@@ -1604,6 +1643,10 @@ export class CombatManager {
         defensePP,
         atkAdj,
         defAdj,
+        atkPPAdj,
+        defPPAdj,
+        atkStateAdj,
+        defStateAdj,
         atkStateMods,
         defStateMods,
         atkBase,
@@ -1628,6 +1671,10 @@ export class CombatManager {
         protectionVal: Number(protection || 0),
         atkAdj,
         defAdj,
+        atkPPAdj,
+        defPPAdj,
+        atkStateAdj,
+        defStateAdj,
         atkBase,
         defBase,
         atkTotal,
@@ -1925,6 +1972,22 @@ export class CombatManager {
       return { ...card, img: backImg, name: "Carte", value: 0, suit: "", isJoker: false, faceImg: null, rawImg: null };
     };
 
+    const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
+    const attackerRuntime = attackerActor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
+    const defenderRuntime = defenderActor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
+    const attackerAtoutKeys = attackerActor && ArcanaManager?.getCharacterAtouts ? ArcanaManager.getCharacterAtouts(attackerActor).map(a => a.key) : [];
+    const defenderAtoutKeys = defenderActor && ArcanaManager?.getCharacterAtouts ? ArcanaManager.getCharacterAtouts(defenderActor).map(a => a.key) : [];
+    const attackerHasRemyJulienne = attackerAtoutKeys.includes('remy-julienne');
+    const defenderHasRemyJulienne = defenderAtoutKeys.includes('remy-julienne');
+    const attackerFreePrimes = (attackerRuntime?.larnacoeurCombat?.freePrimes && (!attackerRuntime?.larnacoeurCombat?.targetId || String(attackerRuntime.larnacoeurCombat.targetId) === String(defenderActor?.id || ''))) ? Number(attackerRuntime.larnacoeurCombat.freePrimes || 0) : 0;
+    const defenderFreePrimes = (defenderRuntime?.larnacoeurCombat?.freePrimes && (!defenderRuntime?.larnacoeurCombat?.targetId || String(defenderRuntime.larnacoeurCombat.targetId) === String(attackerActor?.id || ''))) ? Number(defenderRuntime.larnacoeurCombat.freePrimes || 0) : 0;
+    const attackerPaidPrime = (Array.isArray(aPick.penalites) && aPick.penalites.length > 0) ? 1 : 0;
+    const defenderPaidPrime = (Array.isArray(dPick.penalites) && dPick.penalites.length > 0) ? 1 : 0;
+    const attackerRemyActive = attackerHasRemyJulienne && Array.isArray(aPick.penalites) && aPick.penalites.includes('risque');
+    const defenderRemyActive = defenderHasRemyJulienne && Array.isArray(dPick.penalites) && dPick.penalites.includes('risque');
+    const attackerAllowedPrimes = attackerPaidPrime + attackerFreePrimes + (attackerRemyActive ? 1 : 0);
+    const defenderAllowedPrimes = defenderPaidPrime + defenderFreePrimes + (defenderRemyActive ? 1 : 0);
+
     const view = {
       sessionId: session.sessionId,
       role,
@@ -1951,7 +2014,13 @@ export class CombatManager {
         ready: !!aPick.ready,
         played: CombatManager.#maskPlayed(aPick.played, (!attackerSelf && !isGM) && !revealed, revealed),
         primes: attackerSelf ? (aPick.primes || []) : [],
-        penalites: attackerSelf ? (aPick.penalites || []) : []
+        penalites: attackerSelf ? (aPick.penalites || []) : [],
+        ppInfo: {
+          allowedPrimes: attackerAllowedPrimes,
+          remyActive: attackerRemyActive,
+          hasRemyJulienne: attackerHasRemyJulienne,
+          freePrimes: attackerFreePrimes
+        }
       },
       defender: {
         actorId: session.defender.actorId,
@@ -1968,7 +2037,13 @@ export class CombatManager {
         ready: !!dPick.ready,
         played: CombatManager.#maskPlayed(dPick.played, (!defenderSelf && !isGM) && !revealed, revealed),
         primes: defenderSelf ? (dPick.primes || []) : [],
-        penalites: defenderSelf ? (dPick.penalites || []) : []
+        penalites: defenderSelf ? (dPick.penalites || []) : [],
+        ppInfo: {
+          allowedPrimes: defenderAllowedPrimes,
+          remyActive: defenderRemyActive,
+          hasRemyJulienne: defenderHasRemyJulienne,
+          freePrimes: defenderFreePrimes
+        }
       },
       resolved: {
         done: !!session.resolved.done,
@@ -2348,15 +2423,39 @@ export class CombatManager {
       const pensHtml = CombatManager.AXV_PP_PENALITES.map(p => `
         <label class="axv-pp-line"><input type="checkbox" class="axv-pp-check" data-pp-side="${sideKey}" data-pp-kind="penalite" data-pp-id="${p.id}" ${pensSel.includes(p.id) ? "checked" : ""} ${ppDisabled}/><span>${CombatManager.#esc(p.label)}</span></label>
       `).join("");
+      const allowedPrimes = Number(side.ppInfo?.allowedPrimes || 0);
+      const remyHeaderBadge = side.ppInfo?.hasRemyJulienne
+        ? `<span class="axv-pill" style="background:${side.ppInfo?.remyActive ? '#7f1d1d' : '#5b4636'};color:#fff;border:1px solid ${side.ppInfo?.remyActive ? '#fecaca' : '#e7d3ad'};box-shadow:${side.ppInfo?.remyActive ? '0 0 0 2px rgba(254,202,202,.35)' : 'none'};">Rémy Julienne${side.ppInfo?.remyActive ? ' : RISQUE ×2' : ''}</span>`
+        : "";
+      const remyBanner = side.ppInfo?.hasRemyJulienne
+        ? `<div class="axv-remy-banner" style="margin:8px 0 10px 0;padding:10px 12px;border-radius:10px;border:2px solid ${side.ppInfo?.remyActive ? '#b91c1c' : '#c8a96b'};background:${side.ppInfo?.remyActive ? 'linear-gradient(180deg,#fff1f2 0%,#ffe4e6 100%)' : 'linear-gradient(180deg,#fff8e8 0%,#f6ecd1 100%)'};color:#221;box-shadow:${side.ppInfo?.remyActive ? '0 0 0 3px rgba(185,28,28,.12), 0 6px 18px rgba(0,0,0,.10)' : '0 4px 14px rgba(0,0,0,.08)'};">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+              <div>
+                <div style="font-weight:900;font-size:14px;letter-spacing:.04em;text-transform:uppercase;color:${side.ppInfo?.remyActive ? '#991b1b' : '#7c5a10'};">Atout de personnage — Rémy Julienne</div>
+                <div style="margin-top:2px;font-size:13px;"><strong>Risque</strong> autorise <strong>2 primes</strong> au lieu d'une.</div>
+              </div>
+              <div style="padding:6px 10px;border-radius:999px;background:${side.ppInfo?.remyActive ? '#991b1b' : '#8a6b1f'};color:#fff;font-weight:800;font-size:13px;white-space:nowrap;">${side.ppInfo?.remyActive ? `${allowedPrimes} prime(s) autorisée(s)` : 'En attente de Risque'}</div>
+            </div>
+            ${side.ppInfo?.remyActive ? `<div style="margin-top:8px;font-size:12px;font-weight:700;color:#7f1d1d;">Effet actif ce tour : la pénalité <strong>Risque</strong> a bien ajouté <strong>+1 prime</strong>.</div>` : `<div style="margin-top:8px;font-size:12px;color:#5f4b1b;">Coche <strong>Risque</strong> dans les pénalités pour déclencher l'effet.</div>`}
+          </div>`
+        : "";
+      const remyInfo = side.ppInfo?.hasRemyJulienne
+        ? `<div class="axv-pp-warn" style="background:${side.ppInfo?.remyActive ? '#eef7ec' : '#f7f3ea'};border-color:${side.ppInfo?.remyActive ? '#98c49a' : '#d4c6a2'};color:#222;">Rémy Julienne : <strong>Risque</strong> autorise <strong>2 primes</strong>.${side.ppInfo?.remyActive ? ` Ce tour : <strong>${allowedPrimes}</strong> prime(s) possible(s).` : ''}</div>`
+        : "";
       const ppWarn = (!side.locked && primesSel.length > 0 && pensSel.length === 0) ? `<div class="axv-pp-warn">Prime sélectionnée : choisis au moins une pénalité.</div>` : "";
+      const ppCapWarn = (!side.locked && allowedPrimes >= 0 && primesSel.length > allowedPrimes) ? `<div class="axv-pp-warn">Trop de primes sélectionnées : <strong>${allowedPrimes}</strong> autorisée(s) pour ce tour.</div>` : "";
 
       return `
         <div class="axv-col axv-col--self" data-side="${sideKey}">
           <div class="axv-self-block ${sideKey === "attacker" ? "axv-self-block--red" : "axv-self-block--green"}">
             <div class="axv-block-header">
               <span class="axv-block-name">${CombatManager.#esc(side.name)}</span>
-              <span class="axv-pill">${side.ready ? "VALIDÉ ✓" : (side.locked ? "VERROUILLÉ" : "EN COURS")}</span>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+                ${remyHeaderBadge}
+                <span class="axv-pill">${side.ready ? "VALIDÉ ✓" : (side.locked ? "VERROUILLÉ" : "EN COURS")}</span>
+              </div>
             </div>
+            ${remyBanner}
             ${handHtml}
             <div class="axv-zones">
               <div class="axv-zone" data-zone="${sideKey}:attack">
@@ -2370,7 +2469,7 @@ export class CombatManager {
             </div>
             <div class="axv-pp">
               <div class="axv-pp-box"><div class="axv-zone-title"><span>Primes</span><span class="axv-mini">(coche)</span></div>${primesHtml}</div>
-              <div class="axv-pp-box"><div class="axv-zone-title"><span>Pénalités</span><span class="axv-mini">(si prime)</span></div>${pensHtml}${ppWarn}</div>
+              <div class="axv-pp-box"><div class="axv-zone-title"><span>Pénalités</span><span class="axv-mini">(si prime)</span></div>${pensHtml}${ppWarn}${ppCapWarn}${remyInfo}</div>
             </div>
           </div>
         </div>`;
@@ -3290,9 +3389,10 @@ if (!allowedSide || sideKey !== allowedSide) return;
                   ${CombatManager.#chatActorBadge(atkActor?.name || ex.attackerSide, atkActor, '#c65d2b')}
                   <div style="display:flex;gap:6px;margin-top:4px;">
                     <div style="font-size:15px;line-height:1.75;">
-                      <div>Carte : <strong>${CombatManager.#esc(ex.attackCard?.name || 'Joker')}</strong> (${atkCardVal}) &nbsp;|&nbsp; ${CombatManager.#esc(ex.attackSkillLabel ?? 'Combat')} +${ex.attackSkillVal ?? '?'} &nbsp;|&nbsp; Arme ${signed(weaponMod)}${ex.atkAdj ? ` &nbsp;|&nbsp; PP ${signed(ex.atkAdj)}` : ''}</div>
+                      <div>Carte : <strong>${CombatManager.#esc(ex.attackCard?.name || 'Joker')}</strong> (${atkCardVal}) &nbsp;|&nbsp; ${CombatManager.#esc(ex.attackSkillLabel ?? 'Combat')} +${ex.attackSkillVal ?? '?'} &nbsp;|&nbsp; Arme ${signed(weaponMod)}${ex.atkPPAdj ? ` &nbsp;|&nbsp; Primes/Pénalités ${signed(ex.atkPPAdj)}` : ''}${ex.atkStateAdj ? ` &nbsp;|&nbsp; États ${signed(ex.atkStateAdj)}` : ''}</div>
                       <div style="font-size:18px;font-weight:900;color:#7a3d14;">Total Attaque : ${ex.atkTotal}</div>
-                      ${ex.atkMods?.length ? `<div style="color:#7a3d14;font-style:italic;">${CombatManager.#esc(ex.atkMods.join(', '))}</div>` : ''}
+                      ${ex.atkMods?.length ? `<div style="color:#7a3d14;font-style:italic;">PP : ${CombatManager.#esc(ex.atkMods.join(', '))}</div>` : ''}
+                      ${ex.atkStateMods?.length ? `<div style="color:#7a3d14;font-style:italic;">États : ${CombatManager.#esc(ex.atkStateMods.join(', '))}</div>` : ''}
                       ${ex.pp?.attacker?.primes?.length ? `<div>Primes : ${fmtPP(ex.pp.attacker.primes)}</div>` : ''}
                       ${ex.pp?.attacker?.penalites?.length ? `<div>Pénalités : ${fmtPP(ex.pp.attacker.penalites)}</div>` : ''}
                     </div>
@@ -3303,9 +3403,10 @@ if (!allowedSide || sideKey !== allowedSide) return;
                   ${CombatManager.#chatActorBadge(defActor?.name || ex.defenderSide, defActor, '#4467c4')}
                   <div style="display:flex;gap:6px;margin-top:4px;">
                     <div style="font-size:15px;line-height:1.75;">
-                      <div>Carte : <strong>${CombatManager.#esc(ex.defenseCard?.name || 'Joker')}</strong> (${defCardVal}) &nbsp;|&nbsp; Défense +${ex.defenseSkillVal ?? '?'} &nbsp;|&nbsp; Protection +${protVal}${ex.defAdj ? ` &nbsp;|&nbsp; PP ${signed(ex.defAdj)}` : ''}</div>
+                      <div>Carte : <strong>${CombatManager.#esc(ex.defenseCard?.name || 'Joker')}</strong> (${defCardVal}) &nbsp;|&nbsp; Défense +${ex.defenseSkillVal ?? '?'} &nbsp;|&nbsp; Protection +${protVal}${ex.defPPAdj ? ` &nbsp;|&nbsp; Primes/Pénalités ${signed(ex.defPPAdj)}` : ''}${ex.defStateAdj ? ` &nbsp;|&nbsp; États ${signed(ex.defStateAdj)}` : ''}</div>
                       <div style="font-size:18px;font-weight:900;color:#1e4ea1;">Total Défense : ${ex.defTotal}</div>
-                      ${ex.defMods?.length ? `<div style="color:#1e4ea1;font-style:italic;">${CombatManager.#esc(ex.defMods.join(', '))}</div>` : ''}
+                      ${ex.defMods?.length ? `<div style="color:#1e4ea1;font-style:italic;">PP : ${CombatManager.#esc(ex.defMods.join(', '))}</div>` : ''}
+                      ${ex.defStateMods?.length ? `<div style="color:#1e4ea1;font-style:italic;">États : ${CombatManager.#esc(ex.defStateMods.join(', '))}</div>` : ''}
                       ${ex.pp?.defender?.primes?.length ? `<div>Primes : ${fmtPP(ex.pp.defender.primes)}</div>` : ''}
                       ${ex.pp?.defender?.penalites?.length ? `<div>Pénalités : ${fmtPP(ex.pp.defender.penalites)}</div>` : ''}
                     </div>

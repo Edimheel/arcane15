@@ -19,6 +19,7 @@ export class CardManager {
   static #socketReady = false;
   static #pendingDifficulty = new Map(); // requestId -> { resolve, createdAt }
   static #pendingGmOps = new Map();      // opId -> { resolve, createdAt }
+  static #monteCristoPrompting = new Set();
 
   static get SOCKET_CHANNEL() {
     return `system.${game.system.id}`;
@@ -79,6 +80,21 @@ export class CardManager {
             note: payload?.note ?? "",
             decidedBy: payload?.decidedBy ?? "GM"
           });
+          return;
+        }
+
+        // ---------------------------------
+        // MONTE-CRISTO (prompt owner)
+        // ---------------------------------
+        if (payload.type === "monteCristoPrompt") {
+          if (payload?.toUserId !== game.user?.id) return;
+          const actor = game.actors.get(payload.actorId);
+          if (!actor) return;
+          const deck = game.cards.get(actor.getFlag("arcane15", "deck"));
+          const hand = game.cards.get(actor.getFlag("arcane15", "hand"));
+          const pile = game.cards.get(actor.getFlag("arcane15", "pile"));
+          if (!deck || !hand || !pile) return;
+          await CardManager._offerMonteCristo(actor, deck, hand, pile, true);
           return;
         }
 
@@ -385,6 +401,84 @@ export class CardManager {
   // --------------------------
   // INIT Deck/Hand/Pile + 52 cards + ownership
   // --------------------------
+
+  static async _offerMonteCristo(actor, deck, hand, pile, forceLocal = false) {
+    try {
+      const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
+      if (!ArcanaManager?.getCharacterAtouts || !actor || !deck || !hand || !pile) return;
+      if (!ArcanaManager.getCharacterAtouts(actor).some(a => a.key === 'monte-cristo')) return;
+
+      const ownerUser = (game.users?.contents ?? []).find(u => {
+        if (!u?.active || u?.isGM) return false;
+        try { return !!actor.testUserPermission(u, CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER); } catch (_) { return false; }
+      }) || null;
+
+      if (!forceLocal && ownerUser && String(ownerUser.id) !== String(game.user?.id)) {
+        if (game.user?.isGM) {
+          game.socket.emit(CardManager.SOCKET_CHANNEL, { type: 'monteCristoPrompt', toUserId: ownerUser.id, actorId: actor.id });
+        }
+        return;
+      }
+
+      if (ownerUser && String(ownerUser.id) !== String(game.user?.id) && !game.user?.isGM) return;
+
+      const lockKey = `${actor.id}`;
+      if (CardManager.#monteCristoPrompting.has(lockKey)) return;
+
+      let seen = Array.isArray(actor.getFlag?.('arcane15', 'monteCristoSeenAces')) ? [...actor.getFlag('arcane15', 'monteCristoSeenAces')] : [];
+      const aceCards = hand.cards.contents.filter(c => !CardManager._isJoker(c) && Number(c.flags?.arcane15?.value ?? 0) === 1);
+      seen = seen.filter(cardId => aceCards.some(card => String(card.id) === String(cardId)));
+      const ace = aceCards.find(card => !seen.includes(card.id));
+      await actor.setFlag('arcane15', 'monteCristoSeenAces', seen);
+      if (!ace) return;
+
+      CardManager.#monteCristoPrompting.add(lockKey);
+      const finish = async (discardAce) => {
+        try {
+          if (discardAce) {
+            await hand.pass(pile, [ace.id], { chatNotification: false });
+            await CardManager._normalizeHandSize({ actor, deck, hand, pile });
+            const currentSeen = Array.isArray(actor.getFlag?.('arcane15', 'monteCristoSeenAces')) ? [...actor.getFlag('arcane15', 'monteCristoSeenAces')] : [];
+            await actor.setFlag('arcane15', 'monteCristoSeenAces', currentSeen.filter(cardId => String(cardId) !== String(ace.id)));
+            await ChatMessage.create({
+              speaker: ChatMessage.getSpeaker({ actor }),
+              content: `
+                <div class="axv-chat-card" style="width:100%; max-width:100%; box-sizing:border-box; border:2px solid #3d5875; border-radius:16px; overflow:hidden; background:linear-gradient(180deg, #f7fbff 0%, #ffffff 100%); box-shadow:0 10px 24px rgba(18, 31, 48, .14);">
+                  <div style="padding:8px 12px; background:linear-gradient(90deg, #3d5875 0%, #161616 100%); color:#fff;">
+                    <div style="font-size:10px; letter-spacing:.14em; text-transform:uppercase; font-weight:900; opacity:.95;">Atout de personnage</div>
+                    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:4px;">
+                      <div style="font-weight:900; font-size:16px; line-height:1.15;">Le Comte de Monte-Cristo</div>
+                      <div style="flex:0 0 auto; white-space:nowrap; padding:4px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.24); background:rgba(255,255,255,.16); font-size:11px; font-weight:900; text-transform:uppercase;">Déclenchement</div>
+                    </div>
+                    <div style="margin-top:4px; font-size:12px; opacity:.92;">${actor.name}</div>
+                  </div>
+                  <div style="padding:12px 14px; color:#1d2530; line-height:1.45;">Un <strong>As</strong> a été défaussé puis remplacé immédiatement.</div>
+                </div>`
+            });
+          } else {
+            const currentSeen = Array.isArray(actor.getFlag?.('arcane15', 'monteCristoSeenAces')) ? [...actor.getFlag('arcane15', 'monteCristoSeenAces')] : [];
+            if (!currentSeen.includes(ace.id)) currentSeen.push(ace.id);
+            await actor.setFlag('arcane15', 'monteCristoSeenAces', currentSeen);
+          }
+        } finally {
+          CardManager.#monteCristoPrompting.delete(lockKey);
+        }
+      };
+
+      const dlg = new DialogV2({
+        window: { title: 'Le Comte de Monte-Cristo' },
+        content: `<div><p><strong>${actor.name}</strong> vient de piocher un as : <strong>${CardManager._getCardName(ace)}</strong>.</p><p>Souhaites-tu le défausser immédiatement pour piocher une nouvelle carte ?</p></div>`,
+        buttons: [
+          { action: 'keep', label: 'Garder l’as', default: true, callback: async () => finish(false) },
+          { action: 'discard', label: 'Défausser et repiocher', callback: async () => finish(true) }
+        ]
+      });
+      await dlg.render({ force: true });
+    } catch (error) {
+      console.warn('[ARCANE XV][MONTE-CRISTO] prompt failed', error);
+    }
+  }
+
   static async initActorDecks(actor) {
     if (!game.cards) return;
 
@@ -501,6 +595,7 @@ export class CardManager {
       });
 
       await CardManager._normalizeHandSize({ actor, deck, hand, pile });
+      await CardManager._offerMonteCristo(actor, deck, hand, pile);
 
       const finalJokerCount = hand.cards.contents.filter(c => CardManager._isJoker(c)).length;
       const finalNonJokerCount = hand.cards.contents.filter(c => !CardManager._isJoker(c)).length;
@@ -613,6 +708,7 @@ export class CardManager {
       // Cela couvre aussi l'initiative et le combat si la main était déjà dégradée
       // ou si la défausse doit être recyclée avant de repiocher.
       await CardManager._normalizeHandSize({ actor, deck, hand, pile });
+      await CardManager._offerMonteCristo(actor, deck, hand, pile);
 
       console.log("[ARCANE XV][CYCLE] done", { actor: actor.name, handCount: hand.cards.size, deckCount: deck.cards.size, pileCount: pile.cards.size });
     } catch (e) {
