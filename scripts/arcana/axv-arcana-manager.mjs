@@ -122,6 +122,45 @@ function renderPersonalAtoutChatCard({ title = '', mode = 'Effet courant', body 
     </div>`;
 }
 
+function renderSubstitutedRollChatCard({ title = '', actorName = '', skillName = '', cardName = '', cardImg = '', skillTotal = 0, cardValue = 0, difficulty = 0, finalTotal = 0, success = null, accent = '#3d5875', note = '' } = {}) {
+  const verdict = success == null ? 'RÉSULTAT RETENU' : (success ? 'RÉUSSITE' : 'ÉCHEC');
+  const safeImg = cardImg || 'icons/svg/hazard.svg';
+  const safeCardName = cardName || 'Carte';
+  const noteHtml = note ? `<div style=\"margin-top:8px; font-size:12px; color:#6a5660;\">${note}</div>` : '';
+  return `
+    <div class=\"axv-chat-card\" style=\"width:100%; max-width:100%; box-sizing:border-box; border:2px solid ${accent}; border-radius:16px; overflow:hidden; background:linear-gradient(180deg, #f7fbff 0%, #ffffff 100%); box-shadow:0 10px 24px rgba(18, 28, 44, .14);\">
+      <div style=\"padding:8px 12px; background:linear-gradient(90deg, ${accent} 0%, #161616 100%); color:#fff; box-sizing:border-box;\">
+        <div style=\"font-size:10px; letter-spacing:.14em; text-transform:uppercase; font-weight:900; opacity:.95;\">Atout de personnage</div>
+        <div style=\"display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:4px;\">
+          <div style=\"font-weight:900; font-size:16px; line-height:1.15;\">${title || 'Substitution'}</div>
+          <div style=\"flex:0 0 auto; white-space:nowrap; padding:4px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.24); background:rgba(255,255,255,.16); font-size:11px; font-weight:900; text-transform:uppercase;\">Déclenchement</div>
+        </div>
+        ${actorName ? `<div style=\"margin-top:4px; font-size:12px; opacity:.92;\">${actorName}</div>` : ''}
+      </div>
+      <div style=\"display:flex; gap:12px; padding:12px; min-width:0; box-sizing:border-box;\">
+        <img src=\"${safeImg}\" style=\"width:84px; height:126px; object-fit:cover; border-radius:10px; border:1px solid rgba(0,0,0,.25); flex:0 0 auto;\" />
+        <div style=\"flex:1; min-width:0; overflow-wrap:anywhere; word-break:break-word; color:#2b1822;\">
+          <div style=\"font-weight:900; font-size:14px; margin-bottom:6px; overflow-wrap:anywhere; word-break:break-word;\">${safeCardName}</div>
+          <div style=\"font-weight:700; margin-bottom:6px;\">${skillName || 'Test'}</div>
+          <div>Compétence : <strong>${Number(skillTotal || 0)}</strong></div>
+          <div>Carte substituée : <strong>+${Number(cardValue || 0)}</strong></div>
+          ${difficulty ? `<div>Difficulté (MJ) : <strong>${Number(difficulty || 0)}</strong></div>` : ''}
+          <div style=\"margin-top:10px; font-weight:900; font-size:18px;\">TOTAL : ${Number(finalTotal || 0)}</div>
+          <div style=\"margin-top:6px; font-weight:900; font-size:16px;\">${verdict}</div>
+          ${noteHtml}
+        </div>
+      </div>
+    </div>`;
+}
+
+async function replaceChatMessageContent(messageId, content) {
+  const id = String(messageId || '').trim();
+  if (!id || !content) return false;
+  const message = game.messages?.get(id) ?? null;
+  if (!message) return false;
+  await message.update({ content });
+  return true;
+}
 
 const POSSESSION_SCALES_BY_ARCANE = {
   papesse: {
@@ -3047,18 +3086,49 @@ export class ArcanaManager {
     const newFinal = skillTotal + Number(draw.value ?? 0);
     const skillName = String(payload.skillName || payload.skillKey || "Test");
     const difficulty = Number(payload.difficulty ?? 0);
+    const messageId = String(payload.messageId || '').trim();
 
     const dialog = new DialogV2({
       window: { title: `${item.name} — substitution` },
       content: `<div><p><strong>${skillName}</strong></p><p>Carte initiale : <strong>+${oldCard}</strong> → total <strong>${oldFinal}</strong></p><p>Nouvelle carte piochée : <strong>+${draw.value}</strong> → total <strong>${newFinal}</strong></p><p>Choisis le résultat retenu.</p></div>`,
       buttons: [
         { action: "keep-old", label: "Garder l’ancienne", default: true, callback: async () => {
-          await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor }), content: renderPersonalAtoutChatCard({ title: item.name, mode: 'Déclenchement', actorName: actor.name, body: `${actor.name} conserve le résultat initial (<strong>${oldFinal}</strong>).`, accent: '#3d5875' }) });
+          const content = renderSubstitutedRollChatCard({
+            title: item.name,
+            actorName: actor.name,
+            skillName,
+            cardName: 'Résultat initial conservé',
+            cardImg: item.img || 'icons/svg/card-joker.svg',
+            skillTotal,
+            cardValue: oldCard,
+            difficulty,
+            finalTotal: oldFinal,
+            success: difficulty ? oldFinal >= difficulty : null,
+            accent: '#3d5875',
+            note: `Carte conservée : +${oldCard} — total ${oldFinal}.`
+          });
+          const replaced = await replaceChatMessageContent(messageId, content);
+          if (!replaced) await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor }), content });
         }},
         { action: "take-new", label: "Prendre la nouvelle", callback: async () => {
-          const verdict = difficulty ? (newFinal >= difficulty ? "RÉUSSITE" : "ÉCHEC") : "RÉSULTAT RETENU";
-          await actor.setFlag("arcane15", "lastSkillTest", { skillKey: payload.skillKey, skillName, difficulty, success: difficulty ? newFinal >= difficulty : null, timestamp: Date.now(), finalTotal: newFinal, originalFinal: oldFinal });
-          await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor }), content: renderPersonalAtoutChatCard({ title: item.name, mode: 'Déclenchement', actorName: actor.name, body: `Nouvelle carte retenue pour ${skillName}. Nouveau total : <strong>${newFinal}</strong>${difficulty ? ` contre difficulté <strong>${difficulty}</strong> — ${verdict}` : ''}.`, accent: '#3d5875' }) });
+          const success = difficulty ? newFinal >= difficulty : null;
+          await actor.setFlag("arcane15", "lastSkillTest", { skillKey: payload.skillKey, skillName, difficulty, success, timestamp: Date.now(), finalTotal: newFinal, originalFinal: oldFinal });
+          const content = renderSubstitutedRollChatCard({
+            title: item.name,
+            actorName: actor.name,
+            skillName,
+            cardName: draw.name,
+            cardImg: draw.img,
+            skillTotal,
+            cardValue: Number(draw.value ?? 0),
+            difficulty,
+            finalTotal: newFinal,
+            success,
+            accent: '#3d5875',
+            note: `Carte initiale : +${oldCard} — total ${oldFinal}.`
+          });
+          const replaced = await replaceChatMessageContent(messageId, content);
+          if (!replaced) await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor }), content });
         }}
       ]
     });
@@ -3698,7 +3768,8 @@ Héroïque : ${heroicText}">
           difficulty: Number(t.dataset.axvRollDifficulty ?? 0),
           skillTotal: Number(t.dataset.axvRollSkillTotal ?? 0),
           originalCard: Number(t.dataset.axvRollOriginalCard ?? 0),
-          originalFinal: Number(t.dataset.axvRollOriginalFinal ?? 0)
+          originalFinal: Number(t.dataset.axvRollOriginalFinal ?? 0),
+          messageId: t.closest?.('.chat-message')?.dataset?.messageId ?? null
         });
       });
     });
@@ -3713,27 +3784,60 @@ Héroïque : ${heroicText}">
         t.disabled = true;
         const actor = game.actors.get(t.dataset.actorId);
         if (!actor) return;
-        const draw = await ArcanaManager.#drawTemporaryCard(actor, `${t.dataset.atoutKey} — substitution`);
-        if (!draw) return;
+
         const skillTotal = Number(t.dataset.axvRollSkillTotal ?? 0);
         const oldCard = Number(t.dataset.axvRollOriginalCard ?? 0);
         const oldFinal = Number(t.dataset.axvRollOriginalFinal ?? (skillTotal + oldCard));
-        const newFinal = skillTotal + Number(draw.value ?? 0);
         const difficulty = Number(t.dataset.axvRollDifficulty ?? 0);
         const skillName = String(t.dataset.axvRollSkillName || t.dataset.axvRollSkill || 'Test');
-        const dialog = new DialogV2({
-          window: { title: 'Jusqu’ici tout va bien — substitution' },
-          content: `<div><p><strong>${skillName}</strong></p><p>Carte initiale : <strong>+${oldCard}</strong> → total <strong>${oldFinal}</strong></p><p>Nouvelle carte piochée : <strong>+${draw.value}</strong> → total <strong>${newFinal}</strong></p><p>Choisis le résultat retenu.</p></div>`,
-          buttons: [
-            { action: 'keep-old', label: 'Garder l’ancienne', default: true },
-            { action: 'take-new', label: 'Prendre la nouvelle', callback: async () => {
-              const success = difficulty ? newFinal >= difficulty : null;
-              await actor.setFlag('arcane15', 'lastSkillTest', { skillKey: t.dataset.axvRollSkill, skillName, difficulty, success, timestamp: Date.now(), finalTotal: newFinal, originalFinal: oldFinal });
-              await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor }), content: renderPersonalAtoutChatCard({ title: 'Jusqu’ici tout va bien', mode: 'Déclenchement', actorName: actor.name, body: `Nouvelle carte retenue. Nouveau total : <strong>${newFinal}</strong>${difficulty ? ` contre difficulté <strong>${difficulty}</strong>` : ''}.`, accent: '#3d5875' }) });
-            }}
-          ]
+        const messageId = t.closest?.('.chat-message')?.dataset?.messageId ?? null;
+
+        const draw = await ArcanaManager.#drawTemporaryCard(actor, `${t.dataset.atoutKey} — substitution`);
+        if (!draw) {
+          t.dataset.axvUsed = '0';
+          t.disabled = false;
+          ui.notifications?.error?.("Substitution impossible : aucune carte n’a été piochée.");
+          return;
+        }
+
+        const newCard = Number(draw.value ?? 0);
+        const newFinal = skillTotal + newCard;
+        const success = difficulty ? newFinal >= difficulty : null;
+
+        await actor.setFlag('arcane15', 'lastSkillTest', {
+          skillKey: t.dataset.axvRollSkill,
+          skillName,
+          difficulty,
+          success,
+          timestamp: Date.now(),
+          finalTotal: newFinal,
+          originalFinal: oldFinal,
+          skillTotal,
+          cardValue: newCard,
+          source: 'jusquici-tout-va-bien'
         });
-        await dialog.render({ force: true });
+
+        const content = renderSubstitutedRollChatCard({
+          title: 'Jusqu’ici tout va bien',
+          actorName: actor.name,
+          skillName,
+          cardName: draw.name,
+          cardImg: draw.img,
+          skillTotal,
+          cardValue: newCard,
+          difficulty,
+          finalTotal: newFinal,
+          success,
+          accent: '#3d5875',
+          note: `Carte initiale : +${oldCard} — total ${oldFinal}.`
+        });
+        const replaced = await replaceChatMessageContent(messageId, content);
+        if (!replaced) {
+          await ChatMessage.create({
+            speaker: ChatMessage.getSpeaker({ actor }),
+            content
+          });
+        }
       });
     });
   }
