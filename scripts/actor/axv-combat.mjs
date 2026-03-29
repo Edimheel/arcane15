@@ -152,6 +152,11 @@ export class CombatManager {
       return CombatManager.#gmTogglePP(data);
     }
 
+    if (data.type === "axvCombat:killBill") {
+      if (!game.user.isGM) return;
+      return CombatManager.#gmArmKillBill(data);
+    }
+
     if (data.type === "axvCombat:end") {
       if (!game.user.isGM) return;
       return CombatManager.#gmEndSession(data);
@@ -954,6 +959,9 @@ export class CombatManager {
         attacker: { attack: null, defense: null, locked: false, ready: false, played: [], primes: [], penalites: [] },
         defender: { attack: null, defense: null, locked: false, ready: false, played: [], primes: [], penalites: [] }
       },
+      killBill: CombatManager.#emptyKillBillState(),
+      pendingRoundAdvance: false,
+      roundCardsCycled: false,
       resolved: { done: false, revealed: false, result: null }
     };
 
@@ -1184,6 +1192,126 @@ export class CombatManager {
     };
   }
 
+
+  static #emptyKillBillState() {
+    return {
+      owner: null,
+      target: null,
+      armed: false,
+      phase: null,
+      attack: null,
+      defense: null,
+      ownerReady: false,
+      targetReady: false,
+      result: null,
+      round: null,
+      weapon: null
+    };
+  }
+
+  static #killBillHasAtout(actor) {
+    const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
+    return !!(actor && ArcanaManager?.getCharacterAtouts && ArcanaManager.getCharacterAtouts(actor).some(a => a.key === 'kill-bill'));
+  }
+
+  static #getDestinyStateForCombat(actor) {
+    const candidates = [
+      ["system.stats.destin.value", actor?.system?.stats?.destin?.value],
+      ["system.stats.destin.current", actor?.system?.stats?.destin?.current],
+      ["system.stats.destin.actuel", actor?.system?.stats?.destin?.actuel],
+      ["system.stats.destin.points", actor?.system?.stats?.destin?.points],
+      ["system.stats.destin.remaining", actor?.system?.stats?.destin?.remaining],
+      ["system.stats.destin.disponible", actor?.system?.stats?.destin?.disponible],
+      ["system.destin.value", actor?.system?.destin?.value],
+      ["system.destin.current", actor?.system?.destin?.current],
+      ["system.destin.actuel", actor?.system?.destin?.actuel],
+      ["system.resources.destin.value", actor?.system?.resources?.destin?.value],
+      ["system.resources.destin.current", actor?.system?.resources?.destin?.current],
+      ["system.ressources.destin.value", actor?.system?.ressources?.destin?.value],
+      ["system.ressources.destin.current", actor?.system?.ressources?.destin?.current],
+      ["system.stats.destin", actor?.system?.stats?.destin],
+      ["system.destin", actor?.system?.destin],
+      ["system.resources.destin", actor?.system?.resources?.destin],
+      ["system.ressources.destin", actor?.system?.ressources?.destin]
+    ];
+
+    const toFinite = (value) => {
+      const n = Number(value);
+      if (Number.isFinite(n)) return n;
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        const head = trimmed.split("/")[0]?.trim() ?? trimmed;
+        const normalized = head.replace(",", ".");
+        const parsed = Number(normalized);
+        return Number.isFinite(parsed) ? parsed : null;
+      }
+      return null;
+    };
+
+    for (const [path, raw] of candidates) {
+      const value = toFinite(raw);
+      if (value !== null) return { path, value, raw };
+    }
+    return { path: "system.stats.destin", value: 0, raw: null };
+  }
+
+  static async #spendDestinyForCombat(actor, cost) {
+    const state = CombatManager.#getDestinyStateForCombat(actor);
+    if (state.value < cost) return { ok: false, remaining: state.value, path: state.path, actor };
+    await actor.update({ [state.path]: state.value - cost });
+    return { ok: true, remaining: state.value - cost, previous: state.value, path: state.path, actor };
+  }
+
+  static #killBillRolePhase(kb, role) {
+    if (!kb?.armed) return null;
+    const phase = String(kb.phase || "");
+    if (phase === "armed") return role === kb.owner ? "armed" : "armed-target";
+    if (phase === "pick-attack") return role === kb.owner ? "pick-attack" : "waiting-attack";
+    if (phase === "pick-defense") return role === kb.target ? "pick-defense" : "waiting-defense";
+    if (phase === "resolved") return "resolved";
+    return null;
+  }
+
+  static #isKillBillSelectionPhase(phase) {
+    return phase === "pick-attack" || phase === "pick-defense";
+  }
+
+  static #poingsWeaponForKillBill(actor) {
+    const hasKillBill = CombatManager.#killBillHasAtout(actor);
+    const poingsMod = hasKillBill ? -1 : -3;
+    return {
+      weaponKey: null,
+      name: "Poings",
+      degats: String(poingsMod),
+      attackMod: poingsMod,
+      skillKey: null,
+      competenceKey: null,
+      combatSkillKey: null,
+      skillLabel: null,
+      competenceLabel: null,
+      combatLabel: null,
+      competence: null,
+      skill: null,
+      typeCombat: null
+    };
+  }
+
+  static #resolveKillBillWeapon(actor, preferredWeapon = null) {
+    const weapon = CombatManager.#resolveWeaponForActor(actor, preferredWeapon?.weaponKey || null, preferredWeapon || null);
+    const typeHint = CombatManager.#normalizeSkillText([
+      weapon?.typeCombat,
+      weapon?.combatLabel,
+      weapon?.competenceLabel,
+      weapon?.skillLabel,
+      weapon?.name
+    ].filter(Boolean).join(" "));
+    if (/\btir\b|\bdistance\b|arme a feu|pistolet|fusil|carabine|arc/.test(typeHint)) {
+      return CombatManager.#poingsWeaponForKillBill(actor);
+    }
+    return weapon;
+  }
+
   static #getReusableInitiative(attackerActor, targetToken, sceneId) {
     const last = attackerActor?.getFlag?.("arcane15", "lastInitiativeCombat") || null;
     if (!last) return null;
@@ -1215,6 +1343,36 @@ export class CombatManager {
   }
 
   static #canPlaceCardInZone(session, role, currentPlayed, card, zone) {
+    const killBill = session?.killBill || null;
+    if (CombatManager.#isKillBillSelectionPhase(killBill?.phase)) {
+      const forbidden = new Set([
+        session?.attacker?.picked?.attack?.id,
+        session?.attacker?.picked?.defense?.id,
+        session?.defender?.picked?.attack?.id,
+        session?.defender?.picked?.defense?.id,
+        session?.picks?.attacker?.attack,
+        session?.picks?.attacker?.defense,
+        session?.picks?.defender?.attack,
+        session?.picks?.defender?.defense,
+        killBill?.attack?.id,
+        killBill?.defense?.id
+      ].filter(Boolean));
+
+      if (killBill.phase === "pick-attack") {
+        if (role !== killBill.owner) return { ok: false, toast: "Kill Bill : l'adversaire choisit d'abord la carte d'attaque supplémentaire." };
+        if (zone !== "attack") return { ok: false, toast: "Kill Bill : une seule carte d'attaque supplémentaire est attendue." };
+        if (forbidden.has(card?.id) && card?.id !== killBill?.attack?.id) return { ok: false, toast: "Kill Bill : cette carte est déjà utilisée ce round." };
+        return { ok: true };
+      }
+
+      if (killBill.phase === "pick-defense") {
+        if (role !== killBill.target) return { ok: false, toast: "Kill Bill : le défenseur doit maintenant choisir sa carte de défense supplémentaire." };
+        if (zone !== "defense") return { ok: false, toast: "Kill Bill : une seule carte de défense supplémentaire est attendue." };
+        if (forbidden.has(card?.id) && card?.id !== killBill?.defense?.id) return { ok: false, toast: "Kill Bill : cette carte est déjà utilisée ce round." };
+        return { ok: true };
+      }
+    }
+
     const restriction = CombatManager.#getRestrictionForRole(session, role);
 
     // scope=attack : le perdant doit poser un joker en attaque, mais peut jouer normalement en défense
@@ -1296,7 +1454,11 @@ export class CombatManager {
     const actorId = role === "attacker" ? session.attacker.actorId : session.defender.actorId;
     const tokenId = role === "attacker" ? session.attacker.tokenId : session.defender.tokenId;
     const actor = CombatManager.#actorFromCombatant({ actorId, tokenId, sceneId: session.sceneId });
-    const ids = [...new Set((session.picks[role].played || []).filter(c => c && !c.isJoker && !String(c.id).startsWith("virtual-")).map(c => c.id))];
+    const ids = [...new Set([
+      ...(session.picks[role].played || []).filter(c => c && !c.isJoker && !String(c.id).startsWith("virtual-")).map(c => c.id),
+      ...(session.killBill?.result && session.killBill?.owner === role && session.killBill?.attack && !session.killBill.attack.isJoker ? [session.killBill.attack.id] : []),
+      ...(session.killBill?.result && session.killBill?.target === role && session.killBill?.defense && !session.killBill.defense.isJoker ? [session.killBill.defense.id] : [])
+    ])];
     const handId = actor?.getFlag?.("arcane15", "hand");
     const hand = handId ? game.cards.get(handId) : null;
     for (const id of ids) {
@@ -1311,6 +1473,10 @@ export class CombatManager {
     for (const role of ["attacker", "defender"]) {
       session.picks[role] = { attack: null, defense: null, locked: false, ready: false, played: [], primes: [], penalites: [] };
     }
+    session.killBill = CombatManager.#emptyKillBillState();
+    session.pendingRoundAdvance = false;
+    session.roundCardsCycled = false;
+    session.lastResolvedRound = Number(session.round || 1);
     session.resolved = { done: false, revealed: false, result: null };
     session.round = Number(session.round || 1) + 1;
 
@@ -1363,6 +1529,10 @@ export class CombatManager {
     const { sessionId, role, zone, cardId } = data;
     const session = CombatManager.#gmSessions.get(sessionId);
     if (!session || !["attacker", "defender"].includes(role) || !["attack", "defense"].includes(zone)) return;
+    if (session.killBill?.armed && CombatManager.#isKillBillSelectionPhase(session.killBill?.phase)) {
+      const handled = await CombatManager.#gmPickKillBillCard(data);
+      if (handled) return;
+    }
     const pick = session.picks[role];
     if (pick.locked) return CombatManager.#gmBroadcastState(sessionId);
 
@@ -1395,6 +1565,10 @@ export class CombatManager {
     const { sessionId, role, zone } = data;
     const session = CombatManager.#gmSessions.get(sessionId);
     if (!session || !["attacker", "defender"].includes(role) || !["attack", "defense"].includes(zone)) return;
+    if (session.killBill?.armed && CombatManager.#isKillBillSelectionPhase(session.killBill?.phase)) {
+      const handled = await CombatManager.#gmUnpickKillBillCard(data);
+      if (handled) return;
+    }
     const pick = session.picks[role];
     if (pick.locked) return CombatManager.#gmBroadcastState(sessionId);
     pick.played = (pick.played || []).filter(c => c.zone !== zone);
@@ -1442,10 +1616,209 @@ export class CombatManager {
   }
 
 
+
+  static async #gmArmKillBill(data) {
+    const { sessionId, role } = data;
+    const session = CombatManager.#gmSessions.get(sessionId);
+    if (!session || !["attacker", "defender"].includes(role) || session.ended) return;
+
+    session.killBill ||= CombatManager.#emptyKillBillState();
+    if (session.killBill.armed) {
+      session.toast = "Kill Bill est déjà armé pour ce round.";
+      return CombatManager.#gmBroadcastState(sessionId);
+    }
+
+    const actorInfo = role === "attacker" ? session.attacker : session.defender;
+    const actorTokDoc = CombatManager.#tokenDocFrom(session.sceneId, actorInfo?.tokenId);
+    const actor = actorTokDoc?.actor || CombatManager.#actorFromCombatant({ actorId: actorInfo?.actorId, tokenId: actorInfo?.tokenId, sceneId: session.sceneId });
+    if (!actor || !CombatManager.#killBillHasAtout(actor)) {
+      session.toast = "Kill Bill n'est pas disponible pour ce personnage.";
+      return CombatManager.#gmBroadcastState(sessionId);
+    }
+
+    const spend = await CombatManager.#spendDestinyForCombat(actor, 1);
+    if (!spend?.ok) {
+      session.toast = "Pas assez de points de Destin pour Kill Bill.";
+      return CombatManager.#gmBroadcastState(sessionId);
+    }
+
+    session.killBill = {
+      owner: role,
+      target: role === "attacker" ? "defender" : "attacker",
+      armed: true,
+      phase: "armed",
+      attack: null,
+      defense: null,
+      ownerReady: false,
+      targetReady: false,
+      result: null,
+      round: Number(session.resolved?.result?.round ?? session.lastResolvedRound ?? session.round ?? 1),
+      weapon: CombatManager.#resolveKillBillWeapon(actor, role === "attacker" ? session.attacker.weapon : session.defender.weapon)
+    };
+
+    if (session.resolved?.done && session.resolved?.result) {
+      session.killBill.phase = "pick-attack";
+      session.toast = `Kill Bill : ${session[session.killBill.owner].name} doit maintenant choisir sa carte d'attaque supplémentaire.`;
+      console.log("[ARCANE XV][COMBAT][KILL BILL][GM][ARM][POST-ROUND]", {
+        sessionId,
+        role,
+        target: session.killBill.target,
+        round: session.resolved?.result?.round ?? session.round,
+        weapon: session.killBill.weapon
+      });
+      return CombatManager.#gmBroadcastState(sessionId);
+    }
+
+    session.toast = "Kill Bill armé : l'attaque supplémentaire sera jouée à la fin du round.";
+    console.log("[ARCANE XV][COMBAT][KILL BILL][GM][ARM]", {
+      sessionId,
+      role,
+      target: session.killBill.target,
+      weapon: session.killBill.weapon
+    });
+    return CombatManager.#gmBroadcastState(sessionId);
+  }
+
+  static async #gmPickKillBillCard(data) {
+    const { sessionId, role, zone, cardId } = data;
+    const session = CombatManager.#gmSessions.get(sessionId);
+    const killBill = session?.killBill;
+    if (!session || !killBill?.armed || !CombatManager.#isKillBillSelectionPhase(killBill.phase)) return false;
+
+    const expectedRole = killBill.phase === "pick-attack" ? killBill.owner : killBill.target;
+    const expectedZone = killBill.phase === "pick-attack" ? "attack" : "defense";
+    if (role !== expectedRole || zone !== expectedZone) {
+      session.toast = expectedZone === "attack"
+        ? "Kill Bill : une seule carte d'attaque supplémentaire est attendue côté attaquant."
+        : "Kill Bill : une seule carte de défense supplémentaire est attendue côté défenseur.";
+      await CombatManager.#gmBroadcastState(sessionId);
+      return true;
+    }
+
+    const actorId = role === "attacker" ? session.attacker.actorId : session.defender.actorId;
+    const tokenId = role === "attacker" ? session.attacker.tokenId : session.defender.tokenId;
+    const actor = CombatManager.#actorFromCombatant({ actorId, tokenId, sceneId: session.sceneId });
+    const handCards = CombatManager.#getHandCards(actor);
+    const card = handCards.find(c => c.id === cardId);
+    if (!card) {
+      await CombatManager.#gmBroadcastState(sessionId);
+      return true;
+    }
+
+    const forbidden = new Set([
+      session.picks.attacker.attack,
+      session.picks.attacker.defense,
+      session.picks.defender.attack,
+      session.picks.defender.defense,
+      expectedZone === "attack" ? killBill.defense?.id : killBill.attack?.id
+    ].filter(Boolean));
+    if (forbidden.has(cardId)) {
+      session.toast = "Kill Bill : cette carte est déjà utilisée ce round.";
+      await CombatManager.#gmBroadcastState(sessionId);
+      return true;
+    }
+
+    const candidate = { ...CombatManager.#cardView(card), zone: expectedZone };
+    if (expectedZone === "attack") {
+      killBill.attack = candidate;
+      killBill.ownerReady = false;
+      session.toast = "Kill Bill : l'attaquant a choisi sa carte d'attaque supplémentaire.";
+    } else {
+      killBill.defense = candidate;
+      killBill.targetReady = false;
+      session.toast = "Kill Bill : le défenseur a choisi sa carte de défense supplémentaire.";
+    }
+
+    console.log("[ARCANE XV][COMBAT][KILL BILL][GM][PICK]", {
+      sessionId,
+      role,
+      phase: killBill.phase,
+      zone: expectedZone,
+      cardId
+    });
+
+    await CombatManager.#gmBroadcastState(sessionId);
+    return true;
+  }
+
+  static async #gmUnpickKillBillCard(data) {
+    const { sessionId, role, zone } = data;
+    const session = CombatManager.#gmSessions.get(sessionId);
+    const killBill = session?.killBill;
+    if (!session || !killBill?.armed || !CombatManager.#isKillBillSelectionPhase(killBill.phase)) return false;
+
+    const expectedRole = killBill.phase === "pick-attack" ? killBill.owner : killBill.target;
+    const expectedZone = killBill.phase === "pick-attack" ? "attack" : "defense";
+    if (role !== expectedRole || zone !== expectedZone) return true;
+
+    if (expectedZone === "attack") {
+      killBill.attack = null;
+      killBill.ownerReady = false;
+    } else {
+      killBill.defense = null;
+      killBill.targetReady = false;
+    }
+
+    await CombatManager.#gmBroadcastState(sessionId);
+    return true;
+  }
+
+  static async #gmKillBillReady(data) {
+    const { sessionId, role } = data;
+    const session = CombatManager.#gmSessions.get(sessionId);
+    const killBill = session?.killBill;
+    if (!session || !killBill?.armed || !CombatManager.#isKillBillSelectionPhase(killBill.phase)) return false;
+
+    console.log("[ARCANE XV][COMBAT][KILL BILL][GM][READY]", {
+      sessionId,
+      role,
+      phase: killBill.phase,
+      attack: killBill.attack?.id || null,
+      defense: killBill.defense?.id || null
+    });
+
+    if (killBill.phase === "pick-attack") {
+      if (role !== killBill.owner) return CombatManager.#gmBroadcastState(sessionId);
+      if (!killBill.attack) {
+        session.toast = "Kill Bill : choisis une carte d'attaque supplémentaire.";
+        await CombatManager.#gmBroadcastState(sessionId);
+        return true;
+      }
+      killBill.ownerReady = true;
+      killBill.phase = "pick-defense";
+      const ownerName = killBill.owner === "attacker" ? session.attacker.name : session.defender.name;
+      session.toast = `Kill Bill : ${session[killBill.target].name} subit une attaque supplémentaire de ${ownerName} et doit maintenant choisir une carte de défense.`;
+      await CombatManager.#gmBroadcastState(sessionId);
+      return true;
+    }
+
+    if (killBill.phase === "pick-defense") {
+      if (role !== killBill.target) return CombatManager.#gmBroadcastState(sessionId);
+      if (!killBill.defense) {
+        session.toast = "Kill Bill : le défenseur doit choisir une carte de défense supplémentaire.";
+        await CombatManager.#gmBroadcastState(sessionId);
+        return true;
+      }
+      killBill.targetReady = true;
+      session.toast = null;
+      await CombatManager.#gmBroadcastState(sessionId);
+      await CombatManager.#gmResolveKillBill({ sessionId });
+      return true;
+    }
+
+    return true;
+  }
+
   static async #gmReady(data) {
     const { sessionId, role } = data;
     const session = CombatManager.#gmSessions.get(sessionId);
     if (!session || !["attacker", "defender"].includes(role)) return;
+    if (session.killBill?.armed && CombatManager.#isKillBillSelectionPhase(session.killBill?.phase)) {
+      return CombatManager.#gmKillBillReady(data);
+    }
+    if (session.resolved?.done && session.pendingRoundAdvance && !session.killBill?.armed) {
+      return CombatManager.#gmAdvanceRound({ sessionId });
+    }
     const pick = session.picks[role];
     if (pick.locked) return CombatManager.#gmBroadcastState(sessionId);
 
@@ -1763,13 +2136,6 @@ export class CombatManager {
 
     console.log('[ARCANE XV][COMBAT][GM] resolved', { sessionId, result: session.resolved.result });
 
-    try {
-      await CombatManager.#applyCardCycleForRound(session, 'attacker');
-      await CombatManager.#applyCardCycleForRound(session, 'defender');
-    } catch (e) {
-      console.error('[ARCANE XV][COMBAT][GM] card cycle after round failed', e);
-    }
-
     await CombatManager.#gmBroadcastState(sessionId);
 
     try {
@@ -1781,6 +2147,264 @@ export class CombatManager {
       });
     } catch (e) {
       console.error('[ARCANE XV][COMBAT][GM] chat create failed', e);
+    }
+
+    try {
+      await CombatManager.#applyCardCycleForRound(session, 'attacker');
+      await CombatManager.#applyCardCycleForRound(session, 'defender');
+      session.roundCardsCycled = true;
+    } catch (e) {
+      console.error('[ARCANE XV][COMBAT][GM] card cycle after resolved round failed', e);
+    }
+
+    if (session.killBill?.armed && (session.killBill.phase === 'armed' || CombatManager.#isKillBillSelectionPhase(session.killBill.phase))) {
+      if (session.killBill.phase === 'armed') {
+        session.killBill.phase = 'pick-attack';
+        session.killBill.round = Number(session.resolved?.result?.round ?? session.killBill.round ?? session.lastResolvedRound ?? session.round ?? 1);
+        session.killBill.attack = null;
+        session.killBill.defense = null;
+        session.killBill.ownerReady = false;
+        session.killBill.targetReady = false;
+        session.toast = `Kill Bill : ${session[session.killBill.owner].name} doit maintenant choisir sa carte d'attaque supplémentaire.`;
+        console.log('[ARCANE XV][COMBAT][KILL BILL][GM][START]', {
+          sessionId,
+          owner: session.killBill.owner,
+          target: session.killBill.target,
+          round: session.resolved?.result?.round ?? session.round
+        });
+      }
+      session.pendingRoundAdvance = false;
+      await CombatManager.#gmBroadcastState(sessionId);
+      return;
+    }
+
+    session.pendingRoundAdvance = true;
+    session.toast = "Round résolu : vous pouvez déclencher Kill Bill maintenant ou passer au round suivant.";
+    await CombatManager.#gmBroadcastState(sessionId);
+  }
+
+
+  static async #gmAdvanceRound(data) {
+    const { sessionId } = data;
+    const session = CombatManager.#gmSessions.get(sessionId);
+    if (!session || session.ended) return;
+    if (!session.resolved?.done || !session.pendingRoundAdvance) return CombatManager.#gmBroadcastState(sessionId);
+    if (session.killBill?.armed) return CombatManager.#gmBroadcastState(sessionId);
+
+    const attackerTokDoc = CombatManager.#tokenDocFrom(session.sceneId, session.attacker.tokenId);
+    const attackerActor = attackerTokDoc?.actor || CombatManager.#actorFromCombatant({ actorId: session.attacker.actorId, tokenId: session.attacker.tokenId, sceneId: session.sceneId });
+    const defenderTokDoc = CombatManager.#tokenDocFrom(session.sceneId, session.defender.tokenId);
+    const defenderActor = defenderTokDoc?.actor || CombatManager.#actorFromCombatant({ actorId: session.defender.actorId, tokenId: session.defender.tokenId, sceneId: session.sceneId });
+
+    if (!session.roundCardsCycled) {
+      try {
+        await CombatManager.#applyCardCycleForRound(session, 'attacker');
+        await CombatManager.#applyCardCycleForRound(session, 'defender');
+        session.roundCardsCycled = true;
+      } catch (e) {
+        console.error('[ARCANE XV][COMBAT][GM] card cycle after round failed', e);
+      }
+    }
+
+    if (!session.ended) {
+      await CombatManager.#resetRoundState(session);
+      session.toast = 'Round terminé : 1 carte repiochée, joker vérifié, round suivant prêt.';
+      await CombatManager.#safeInitDecks(attackerActor);
+      await CombatManager.#safeInitDecks(defenderActor);
+      await CombatManager.#gmBroadcastState(sessionId);
+    }
+  }
+
+  static async #gmResolveKillBill(data) {
+    const { sessionId } = data;
+    const session = CombatManager.#gmSessions.get(sessionId);
+    const killBill = session?.killBill;
+    if (!session || !killBill?.armed || killBill.phase !== 'pick-defense' || !killBill.ownerReady || !killBill.targetReady) return;
+    if (!killBill.attack || !killBill.defense) return CombatManager.#gmBroadcastState(sessionId);
+
+    const attackerTokDoc = CombatManager.#tokenDocFrom(session.sceneId, session.attacker.tokenId);
+    const attackerActor = attackerTokDoc?.actor || CombatManager.#actorFromCombatant({ actorId: session.attacker.actorId, tokenId: session.attacker.tokenId, sceneId: session.sceneId });
+    const defenderTokDoc = CombatManager.#tokenDocFrom(session.sceneId, session.defender.tokenId);
+    const defenderActor = defenderTokDoc?.actor || CombatManager.#actorFromCombatant({ actorId: session.defender.actorId, tokenId: session.defender.tokenId, sceneId: session.sceneId });
+
+    const ownerRole = killBill.owner;
+    const targetRole = killBill.target;
+    const attackActor = ownerRole === 'attacker' ? attackerActor : defenderActor;
+    const defenseActor = targetRole === 'attacker' ? attackerActor : defenderActor;
+    const attackWeapon = killBill.weapon || (ownerRole === 'attacker' ? session.attacker.weapon : session.defender.weapon) || { name: 'Poings', attackMod: -3, degats: '-3' };
+
+    const _sv  = (s) => Number(s?.val ?? 0);
+    const attackSkillData = CombatManager.#resolveCombatSkill(attackActor, attackWeapon, ownerRole);
+    const attackSkill = Number(attackSkillData?.value ?? 0);
+    const attackSkillLabel = String(attackSkillData?.label || 'Combat').trim() || 'Combat';
+    const defenseSkill = _sv(defenseActor?.system?.competences?.defense);
+    const protection = Number(defenseActor?.system?.stats?.protection ?? 0);
+
+    const ppAtt = { primes: [], penalites: [] };
+    const ppDef = { primes: [], penalites: [] };
+
+    const makeExchange = ({ attackerSide, defenderSide, attackActor, defenseActor, attackCard, defenseCard, attackSkill, attackSkillLabel = "Combat", defenseSkill, weaponMod, protection, weaponName }) => {
+      const attackPP = attackerSide === 'attacker' ? ppAtt : ppDef;
+      const defensePP = defenderSide === 'attacker' ? ppAtt : ppDef;
+
+      const atkMods = [];
+      const defMods = [];
+      const atkStateMods = [];
+      const defStateMods = [];
+      let atkAdj = 0;
+      let defAdj = 0;
+      let atkPPAdj = 0;
+      let defPPAdj = 0;
+      let atkStateAdj = 0;
+      let defStateAdj = 0;
+
+      const attackVitalite = Number(attackActor?.system?.stats?.vitalite ?? 0);
+      const defenseVitalite = Number(defenseActor?.system?.stats?.vitalite ?? 0);
+      const attackMalEnPoint = !!(attackActor?.system?.stats?.malEnPoint || attackActor?.getFlag?.('arcane15', 'malEnPoint'));
+      const defenseMalEnPoint = !!(defenseActor?.system?.stats?.malEnPoint || defenseActor?.getFlag?.('arcane15', 'malEnPoint'));
+      if (attackMalEnPoint || attackVitalite <= 0) { atkAdj -= 1; atkStateAdj -= 1; atkStateMods.push('Mal en point -1'); }
+      if (defenseMalEnPoint || defenseVitalite <= 0) { defAdj -= 1; defStateAdj -= 1; defStateMods.push('Mal en point -1'); }
+
+      const attackRuntime = attackActor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
+      const defenseRuntime = defenseActor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
+      const attackAllTestsMalus = Number(attackRuntime?.allTestsMalus?.value || 0);
+      const defenseAllTestsMalus = Number(defenseRuntime?.allTestsMalus?.value || 0);
+      if (attackAllTestsMalus) { atkAdj -= attackAllTestsMalus; atkStateAdj -= attackAllTestsMalus; atkStateMods.push(`${attackRuntime?.allTestsMalus?.label || 'Malus arcane'} -${attackAllTestsMalus}`); }
+      if (defenseAllTestsMalus) { defAdj -= defenseAllTestsMalus; defStateAdj -= defenseAllTestsMalus; defStateMods.push(`${defenseRuntime?.allTestsMalus?.label || 'Malus arcane'} -${defenseAllTestsMalus}`); }
+
+      const attackMerteuil = [attackRuntime?.merteuilBonus, attackRuntime?.sharedMerteuilBonus].find(b => b?.value && String(b?.targetId || '') === String(defenseActor?.id || '')) || null;
+      const defenseMerteuil = [defenseRuntime?.merteuilBonus, defenseRuntime?.sharedMerteuilBonus].find(b => b?.value && String(b?.targetId || '') === String(attackActor?.id || '')) || null;
+      if (attackMerteuil?.value) { atkAdj += Number(attackMerteuil.value || 0); atkStateAdj += Number(attackMerteuil.value || 0); atkStateMods.push(`${attackMerteuil.label || 'Marquise de Merteuil'} +${Number(attackMerteuil.value || 0)}`); }
+      if (defenseMerteuil?.value) { defAdj += Number(defenseMerteuil.value || 0); defStateAdj += Number(defenseMerteuil.value || 0); defStateMods.push(`${defenseMerteuil.label || 'Marquise de Merteuil'} +${Number(defenseMerteuil.value || 0)}`); }
+
+      const atkCardVal = attackCard?.isJoker ? 0 : Number(attackCard?.value ?? 0);
+      const defCardVal = defenseCard?.isJoker ? 0 : Number(defenseCard?.value ?? 0);
+      const atkBase = Number(attackSkill) + atkCardVal + Number(weaponMod || 0);
+      const defBase = Number(defenseSkill) + defCardVal + Number(protection || 0);
+      const atkTotal = atkBase + atkAdj;
+      const defTotal = defBase + defAdj;
+      const margin = atkTotal - defTotal;
+      const hit = margin > 0;
+
+      let damage = hit ? margin : 0;
+      const damageMods = [];
+      const attackArcaneDamageBonus = Number(attackActor?.getFlag?.('arcane15', 'arcaneDamageBonus') ?? 0);
+      if (hit && attackArcaneDamageBonus) {
+        damage += attackArcaneDamageBonus;
+        damageMods.push(`Arcane-sans-nom +${attackArcaneDamageBonus} dégâts`);
+      }
+
+      return {
+        attackerSide,
+        defenderSide,
+        attackCard,
+        defenseCard,
+        attackSkillVal: Number(attackSkill),
+        attackSkillLabel: attackSkillLabel,
+        atkCardVal,
+        weaponModVal: Number(weaponMod || 0),
+        weaponName: weaponName || "Poings",
+        defenseSkillVal: Number(defenseSkill),
+        defCardVal,
+        protectionVal: Number(protection || 0),
+        atkAdj,
+        defAdj,
+        atkPPAdj,
+        defPPAdj,
+        atkStateAdj,
+        defStateAdj,
+        atkBase,
+        defBase,
+        atkTotal,
+        defTotal,
+        atkMods,
+        defMods,
+        atkStateMods,
+        defStateMods,
+        margin,
+        hit,
+        damage,
+        damageMods,
+        pp: {
+          attacker: { primes: [], penalites: [] },
+          defender: { primes: [], penalites: [] },
+          incidents: { attacker: false, defender: false }
+        }
+      };
+    };
+
+    const exchange = makeExchange({
+      attackerSide: ownerRole,
+      defenderSide: targetRole,
+      attackActor,
+      defenseActor,
+      attackCard: killBill.attack,
+      defenseCard: killBill.defense,
+      attackSkill,
+      attackSkillLabel,
+      defenseSkill,
+      weaponMod: attackWeapon?.attackMod,
+      protection,
+      weaponName: attackWeapon?.name
+    });
+
+    const applyDamage = async (ex) => {
+      if (!ex.hit || ex.damage <= 0) return null;
+      try {
+        const targetActor = ex.defenderSide === 'attacker' ? attackerActor : defenderActor;
+        const targetTokDoc = ex.defenderSide === 'attacker' ? attackerTokDoc : defenderTokDoc;
+        return await CombatManager.applyVitalityDamage(targetActor, ex.damage, {
+          targetTokDoc,
+          sourceLabel: 'Kill Bill',
+          attackerActor: ex.attackerSide === 'attacker' ? attackerActor : defenderActor
+        });
+      } catch (e) {
+        console.error('[ARCANE XV][COMBAT][KILL BILL][GM] applyDamage FAILED', e, { exchange: ex });
+        return null;
+      }
+    };
+
+    const applied = await applyDamage(exchange);
+    killBill.phase = 'resolved';
+    killBill.result = {
+      round: Number(killBill.round ?? session.resolved?.result?.round ?? session.lastResolvedRound ?? session.round ?? 1),
+      exchange,
+      applied: applied ? [applied] : [],
+      weapon: attackWeapon
+    };
+
+    if (session.resolved?.result) {
+      session.resolved.result.killBill = killBill.result;
+    }
+
+    console.log('[ARCANE XV][COMBAT][KILL BILL][GM][RESOLVED]', {
+      sessionId,
+      owner: ownerRole,
+      target: targetRole,
+      attack: killBill.attack?.id || null,
+      defense: killBill.defense?.id || null,
+      hit: exchange.hit,
+      damage: exchange.damage
+    });
+
+    try {
+      await CombatManager.#applyCardCycleForRound(session, 'attacker');
+      await CombatManager.#applyCardCycleForRound(session, 'defender');
+    } catch (e) {
+      console.error('[ARCANE XV][COMBAT][KILL BILL][GM] card cycle after round failed', e);
+    }
+
+    await CombatManager.#gmBroadcastState(sessionId);
+
+    try {
+      await ChatMessage.create({
+        content: CombatManager.#killBillChatHtml(session, attackerActor, defenderActor),
+        speaker: { alias: "" },
+        style: CONST.CHAT_MESSAGE_STYLES?.OTHER ?? 0,
+        flags: { arcane15: { customCard: true } }
+      });
+    } catch (e) {
+      console.error('[ARCANE XV][COMBAT][KILL BILL][GM] chat create failed', e);
     }
 
     if (!session.ended) {
@@ -1945,18 +2569,32 @@ export class CombatManager {
 
     const aPick = session.picks.attacker;
     const dPick = session.picks.defender;
+    const killBill = session.killBill || CombatManager.#emptyKillBillState();
+    const attackerKillBillPhase = CombatManager.#killBillRolePhase(killBill, "attacker");
+    const defenderKillBillPhase = CombatManager.#killBillRolePhase(killBill, "defender");
+    const killBillPhaseActive = CombatManager.#isKillBillSelectionPhase(killBill.phase);
 
-    const aSelIds = [aPick.attack, aPick.defense].filter(Boolean);
-    const dSelIds = [dPick.attack, dPick.defense].filter(Boolean);
+    const aSelIds = [aPick.attack, aPick.defense, killBill.owner === "attacker" ? killBill.attack?.id : null, killBill.target === "attacker" ? killBill.defense?.id : null].filter(Boolean);
+    const dSelIds = [dPick.attack, dPick.defense, killBill.owner === "defender" ? killBill.attack?.id : null, killBill.target === "defender" ? killBill.defense?.id : null].filter(Boolean);
 
-    const attackerPickedVisible = {
-      attack: aPick.attack ? (attackerHand.find(c => c.id === aPick.attack) || null) : null,
-      defense: aPick.defense ? (attackerHand.find(c => c.id === aPick.defense) || null) : null
-    };
-    const defenderPickedVisible = {
-      attack: dPick.attack ? (defenderHand.find(c => c.id === dPick.attack) || null) : null,
-      defense: dPick.defense ? (defenderHand.find(c => c.id === dPick.defense) || null) : null
-    };
+    const attackerPickedVisible = killBillPhaseActive
+      ? {
+          attack: killBill.owner === "attacker" ? (killBill.attack || null) : null,
+          defense: killBill.target === "attacker" ? (killBill.defense || null) : null
+        }
+      : {
+          attack: aPick.attack ? (attackerHand.find(c => c.id === aPick.attack) || null) : null,
+          defense: aPick.defense ? (attackerHand.find(c => c.id === aPick.defense) || null) : null
+        };
+    const defenderPickedVisible = killBillPhaseActive
+      ? {
+          attack: killBill.owner === "defender" ? (killBill.attack || null) : null,
+          defense: killBill.target === "defender" ? (killBill.defense || null) : null
+        }
+      : {
+          attack: dPick.attack ? (defenderHand.find(c => c.id === dPick.attack) || null) : null,
+          defense: dPick.defense ? (defenderHand.find(c => c.id === dPick.defense) || null) : null
+        };
 
     attackerHand = attackerHand.filter(c => !aSelIds.includes(c.id));
     defenderHand = defenderHand.filter(c => !dSelIds.includes(c.id));
@@ -1965,6 +2603,7 @@ export class CombatManager {
     const attackerSelf = (role === "attacker");
     const defenderSelf = (role === "defender");
     const revealed = !!session.resolved?.revealed;
+    const killBillRevealed = !!killBill.result;
     const backImg = "systems/arcane15/assets/axvc01_tarot_v1v1/axvc01__dos-cartes.png";
 
     const hidePicked = (card) => {
@@ -1979,6 +2618,10 @@ export class CombatManager {
     const defenderAtoutKeys = defenderActor && ArcanaManager?.getCharacterAtouts ? ArcanaManager.getCharacterAtouts(defenderActor).map(a => a.key) : [];
     const attackerHasRemyJulienne = attackerAtoutKeys.includes('remy-julienne');
     const defenderHasRemyJulienne = defenderAtoutKeys.includes('remy-julienne');
+    const attackerHasKillBill = attackerAtoutKeys.includes('kill-bill');
+    const defenderHasKillBill = defenderAtoutKeys.includes('kill-bill');
+    const attackerDestiny = CombatManager.#getDestinyStateForCombat(attackerActor).value;
+    const defenderDestiny = CombatManager.#getDestinyStateForCombat(defenderActor).value;
     const attackerFreePrimes = (attackerRuntime?.larnacoeurCombat?.freePrimes && (!attackerRuntime?.larnacoeurCombat?.targetId || String(attackerRuntime.larnacoeurCombat.targetId) === String(defenderActor?.id || ''))) ? Number(attackerRuntime.larnacoeurCombat.freePrimes || 0) : 0;
     const defenderFreePrimes = (defenderRuntime?.larnacoeurCombat?.freePrimes && (!defenderRuntime?.larnacoeurCombat?.targetId || String(defenderRuntime.larnacoeurCombat.targetId) === String(attackerActor?.id || ''))) ? Number(defenderRuntime.larnacoeurCombat.freePrimes || 0) : 0;
     const attackerPaidPrime = (Array.isArray(aPick.penalites) && aPick.penalites.length > 0) ? 1 : 0;
@@ -2007,19 +2650,31 @@ export class CombatManager {
         hand: attackerSelf ? attackerHand : [],
         handBackCount: attackerSelf ? 0 : attackerHand.length,
         picked: {
-          attack: (attackerSelf || isGM || revealed) ? attackerPickedVisible.attack : hidePicked(attackerPickedVisible.attack),
-          defense: (attackerSelf || isGM || revealed) ? attackerPickedVisible.defense : hidePicked(attackerPickedVisible.defense)
+          attack: (attackerSelf || isGM || (killBillPhaseActive && killBill.owner === 'attacker' ? killBillRevealed : revealed)) ? attackerPickedVisible.attack : hidePicked(attackerPickedVisible.attack),
+          defense: (attackerSelf || isGM || (killBillPhaseActive && killBill.target === 'attacker' ? killBillRevealed : revealed)) ? attackerPickedVisible.defense : hidePicked(attackerPickedVisible.defense)
         },
-        locked: !!aPick.locked,
-        ready: !!aPick.ready,
-        played: CombatManager.#maskPlayed(aPick.played, (!attackerSelf && !isGM) && !revealed, revealed),
+        locked: killBillPhaseActive ? !!(killBill.owner === 'attacker' ? killBill.ownerReady : killBill.target === 'attacker' ? killBill.targetReady : aPick.locked) : !!aPick.locked,
+        ready: killBillPhaseActive ? !!(killBill.owner === 'attacker' ? killBill.ownerReady : killBill.target === 'attacker' ? killBill.targetReady : aPick.ready) : !!aPick.ready,
+        played: CombatManager.#maskPlayed(
+          killBillPhaseActive
+            ? [
+                ...(killBill.owner === 'attacker' && killBill.attack ? [{ ...killBill.attack, zone: 'attack' }] : []),
+                ...(killBill.target === 'attacker' && killBill.defense ? [{ ...killBill.defense, zone: 'defense' }] : [])
+              ]
+            : aPick.played,
+          (!attackerSelf && !isGM) && !(killBillPhaseActive ? killBillRevealed : revealed),
+          killBillPhaseActive ? killBillRevealed : revealed
+        ),
         primes: attackerSelf ? (aPick.primes || []) : [],
         penalites: attackerSelf ? (aPick.penalites || []) : [],
         ppInfo: {
           allowedPrimes: attackerAllowedPrimes,
           remyActive: attackerRemyActive,
           hasRemyJulienne: attackerHasRemyJulienne,
-          freePrimes: attackerFreePrimes
+          freePrimes: attackerFreePrimes,
+          hasKillBill: attackerHasKillBill,
+          killBillAvailable: attackerHasKillBill && attackerDestiny >= 1 && !killBill.armed,
+          destiny: attackerDestiny
         }
       },
       defender: {
@@ -2030,27 +2685,64 @@ export class CombatManager {
         hand: defenderSelf ? defenderHand : [],
         handBackCount: defenderSelf ? 0 : defenderHand.length,
         picked: {
-          attack: (defenderSelf || isGM || revealed) ? defenderPickedVisible.attack : hidePicked(defenderPickedVisible.attack),
-          defense: (defenderSelf || isGM || revealed) ? defenderPickedVisible.defense : hidePicked(defenderPickedVisible.defense)
+          attack: (defenderSelf || isGM || (killBillPhaseActive && killBill.owner === 'defender' ? killBillRevealed : revealed)) ? defenderPickedVisible.attack : hidePicked(defenderPickedVisible.attack),
+          defense: (defenderSelf || isGM || (killBillPhaseActive && killBill.target === 'defender' ? killBillRevealed : revealed)) ? defenderPickedVisible.defense : hidePicked(defenderPickedVisible.defense)
         },
-        locked: !!dPick.locked,
-        ready: !!dPick.ready,
-        played: CombatManager.#maskPlayed(dPick.played, (!defenderSelf && !isGM) && !revealed, revealed),
+        locked: killBillPhaseActive ? !!(killBill.owner === 'defender' ? killBill.ownerReady : killBill.target === 'defender' ? killBill.targetReady : dPick.locked) : !!dPick.locked,
+        ready: killBillPhaseActive ? !!(killBill.owner === 'defender' ? killBill.ownerReady : killBill.target === 'defender' ? killBill.targetReady : dPick.ready) : !!dPick.ready,
+        played: CombatManager.#maskPlayed(
+          killBillPhaseActive
+            ? [
+                ...(killBill.owner === 'defender' && killBill.attack ? [{ ...killBill.attack, zone: 'attack' }] : []),
+                ...(killBill.target === 'defender' && killBill.defense ? [{ ...killBill.defense, zone: 'defense' }] : [])
+              ]
+            : dPick.played,
+          (!defenderSelf && !isGM) && !(killBillPhaseActive ? killBillRevealed : revealed),
+          killBillPhaseActive ? killBillRevealed : revealed
+        ),
         primes: defenderSelf ? (dPick.primes || []) : [],
         penalites: defenderSelf ? (dPick.penalites || []) : [],
         ppInfo: {
           allowedPrimes: defenderAllowedPrimes,
           remyActive: defenderRemyActive,
           hasRemyJulienne: defenderHasRemyJulienne,
-          freePrimes: defenderFreePrimes
+          freePrimes: defenderFreePrimes,
+          hasKillBill: defenderHasKillBill,
+          killBillAvailable: defenderHasKillBill && defenderDestiny >= 1 && !killBill.armed,
+          destiny: defenderDestiny
         }
       },
+      killBill: {
+        armed: !!killBill.armed,
+        phase: killBill.phase || null,
+        attackerPhase: attackerKillBillPhase,
+        defenderPhase: defenderKillBillPhase,
+        owner: killBill.owner || null,
+        target: killBill.target || null,
+        phaseActive: killBillPhaseActive,
+        attack: killBill.attack || null,
+        defense: killBill.defense || null
+      },
+      pendingRoundAdvance: !!session.pendingRoundAdvance,
       resolved: {
         done: !!session.resolved.done,
         revealed: !!session.resolved.revealed,
         result: session.resolved.done ? session.resolved.result : null
       }
     };
+
+    if (killBill.armed) {
+      console.log("[ARCANE XV][COMBAT][KILL BILL][VIEW]", {
+        sessionId: session.sessionId,
+        role,
+        attackerPhase: attackerKillBillPhase,
+        defenderPhase: defenderKillBillPhase,
+        kbAttack: killBill.attack?.id || null,
+        kbDefense: killBill.defense?.id || null,
+        normalAttacker: { attack: aPick.attack, defense: aPick.defense },
+        normalDefender: { attack: dPick.attack, defense: dPick.defense }
+      });
+    }
 
     return view;
   }
@@ -2153,13 +2845,15 @@ export class CombatManager {
       const footer = appEl?.querySelector?.('footer, .dialog-footer, .window-footer, .dialog-buttons, .form-footer');
       if (footer) footer.style.display = 'none';
       try {
-        const left = Math.max(24, Math.round((window.innerWidth - 1240) / 2));
-        const top  = Math.max(24, Math.round((window.innerHeight - 860) / 2));
-        dlg.setPosition?.({ left, top, width: 1220 });
+        const width = Math.min(1220, Math.max(1040, window.innerWidth - 24));
+        const height = Math.min(window.innerHeight - 2, Math.min(1080, Math.max(900, window.innerHeight + 40)));
+        const left = Math.max(8, Math.round((window.innerWidth - width) / 2));
+        const top  = Math.max(8, Math.round((window.innerHeight - height) / 2));
+        dlg.setPosition?.({ left, top, width, height });
       } catch (_) {}
       try {
         const wc = appEl?.querySelector?.('.window-content');
-        if (wc) { wc.style.background = 'rgba(0,0,0,0.92)'; wc.style.backgroundImage = 'none'; wc.style.padding = '8px'; wc.style.overflow = 'auto'; }
+        if (wc) { wc.style.background = 'rgba(0,0,0,0.92)'; wc.style.backgroundImage = 'none'; wc.style.padding = '2px 2px 0 2px'; wc.style.overflow = 'hidden'; }
       } catch (_) {}
       try {
         const header = appEl?.querySelector?.('.window-header');
@@ -2251,46 +2945,48 @@ export class CombatManager {
     const styleEl = document.createElement("style");
     styleEl.textContent = `
       #${dialogId} { font-family:var(--font-primary); color:#eee; }
-      #${dialogId} .axv-wrap { width:1180px; max-width:1180px; display:flex; flex-direction:column; gap:5px; }
-      #${dialogId} .axv-head { display:flex; justify-content:space-between; align-items:flex-end; gap:12px; padding:5px 10px; border:1px solid rgba(255,255,255,.18); border-radius:10px; background:#000; }
-      #${dialogId} .axv-title { font-weight:900; font-size:14px; }
-      #${dialogId} .axv-sub { font-size:11px; opacity:.85; margin-top:2px; }
-      #${dialogId} .axv-row { display:flex; gap:8px; }
+      #${dialogId} { height:100%; }
+      #${dialogId} .axv-wrap { width:min(1160px, calc(100vw - 56px)); max-width:min(1160px, calc(100vw - 56px)); height:100%; display:flex; flex-direction:column; gap:1px; }
+      #${dialogId} .axv-head { display:flex; justify-content:space-between; align-items:flex-end; gap:6px; padding:2px 5px; border:1px solid rgba(255,255,255,.18); border-radius:10px; background:#000; }
+      #${dialogId} .axv-title { font-weight:900; font-size:23px; }
+      #${dialogId} .axv-sub { font-size:18px; opacity:.85; margin-top:0; }
+      #${dialogId} .axv-row { display:flex; gap:3px; }
+      #${dialogId} .axv-body { flex:1 1 auto; min-height:0; overflow:hidden; }
       #${dialogId} .axv-col { flex:1; border:none; background:transparent; padding:0; }
       #${dialogId} .axv-col h3 { display:none; }
-      #${dialogId} .axv-pill { font-size:11px; font-weight:900; padding:3px 10px; border-radius:999px; border:1px solid rgba(255,255,255,.2); background:rgba(0,0,0,.35); white-space:nowrap; }
-      #${dialogId} .axv-self-block--green { background:linear-gradient(160deg,#1a4a2e,#0d3320); border:1px solid rgba(60,180,90,.35); border-radius:14px; padding:10px; display:flex; flex-direction:column; gap:6px; }
-      #${dialogId} .axv-self-block--red   { background:linear-gradient(160deg,#4a1a1a,#331010); border:1px solid rgba(180,60,60,.35); border-radius:14px; padding:10px; display:flex; flex-direction:column; gap:6px; }
+      #${dialogId} .axv-pill { font-size:19px; font-weight:900; padding:2px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.2); background:rgba(0,0,0,.35); white-space:nowrap; }
+      #${dialogId} .axv-self-block--green { background:linear-gradient(160deg,#1a4a2e,#0d3320); border:1px solid rgba(60,180,90,.35); border-radius:14px; padding:5px; display:flex; flex-direction:column; gap:3px; }
+      #${dialogId} .axv-self-block--red   { background:linear-gradient(160deg,#4a1a1a,#331010); border:1px solid rgba(180,60,60,.35); border-radius:14px; padding:5px; display:flex; flex-direction:column; gap:3px; }
       #${dialogId} .axv-block-header { display:flex; justify-content:space-between; align-items:center; }
-      #${dialogId} .axv-block-name { font-weight:900; font-size:13px; }
-      #${dialogId} .axv-hand-title { display:flex; justify-content:space-between; font-size:11px; font-weight:700; margin-bottom:3px; opacity:.85; }
-      #${dialogId} .axv-hand { display:flex; gap:7px; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; padding-bottom:4px; }
+      #${dialogId} .axv-block-name { font-weight:900; font-size:20px; }
+      #${dialogId} .axv-hand-title { display:flex; justify-content:space-between; font-size:18px; font-weight:700; margin-bottom:1px; opacity:.85; }
+      #${dialogId} .axv-hand { display:flex; gap:4px; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; padding-bottom:1px; }
       #${dialogId} .axv-hand::-webkit-scrollbar { height:4px; }
       #${dialogId} .axv-hand::-webkit-scrollbar-thumb { background:rgba(255,255,255,.2); border-radius:999px; }
-      #${dialogId} .axv-card { width:76px; border-radius:9px; overflow:hidden; border:1px solid rgba(0,0,0,.3); background:#111; cursor:grab; user-select:none; flex:0 0 auto; display:flex; flex-direction:column; }
-      #${dialogId} .axv-card img { width:100%; height:102px; object-fit:cover; display:block; }
-      #${dialogId} .axv-card-meta { padding:3px 5px 4px; background:rgba(0,0,0,.82); border-top:1px solid rgba(255,255,255,.08); }
-      #${dialogId} .axv-card-name { font-size:10px; font-weight:800; line-height:1.1; color:#f6e7db; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      #${dialogId} .axv-card-val { font-size:10px; color:#f8b18a; }
+      #${dialogId} .axv-card { width:62px; border-radius:8px; overflow:hidden; border:1px solid rgba(0,0,0,.3); background:#111; cursor:grab; user-select:none; flex:0 0 auto; display:flex; flex-direction:column; }
+      #${dialogId} .axv-card img { width:100%; height:80px; object-fit:cover; display:block; }
+      #${dialogId} .axv-card-meta { padding:2px 4px 2px; background:rgba(0,0,0,.82); border-top:1px solid rgba(255,255,255,.08); }
+      #${dialogId} .axv-card-name { font-size:17px; font-weight:800; line-height:1.05; color:#f6e7db; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      #${dialogId} .axv-card-val { font-size:17px; color:#f8b18a; }
       #${dialogId} .axv-card[aria-disabled="true"] { opacity:.6; cursor:not-allowed; border-color:rgba(214,73,73,.8); }
       #${dialogId} .axv-card.is-disabled .axv-card-meta { background:rgba(42,8,8,.92); }
       #${dialogId} .axv-card.is-restricted { border:2px solid rgba(255,50,50,.85) !important; }
-      #${dialogId} .axv-zones { display:flex; gap:6px; }
-      #${dialogId} .axv-zone { flex:1; border:2px dashed rgba(255,255,255,.25); border-radius:10px; padding:6px; height:140px; max-height:140px; overflow:hidden; box-sizing:border-box; background:rgba(0,0,0,.2); }
+      #${dialogId} .axv-zones { display:flex; gap:4px; }
+      #${dialogId} .axv-zone { flex:1; border:2px dashed rgba(255,255,255,.25); border-radius:10px; padding:4px; height:106px; max-height:106px; overflow:hidden; box-sizing:border-box; background:rgba(0,0,0,.2); }
       #${dialogId} .axv-zone.dragover { border-color:rgba(255,255,255,.6); background:rgba(255,255,255,.07); }
-      #${dialogId} .axv-zone-title { font-weight:900; font-size:11px; margin-bottom:4px; display:flex; justify-content:space-between; }
+      #${dialogId} .axv-zone-title { font-weight:900; font-size:18px; margin-bottom:2px; display:flex; justify-content:space-between; }
       #${dialogId} .axv-zone-slot { display:flex; gap:5px; overflow:hidden; }
-      #${dialogId} .axv-mini { font-size:10px; opacity:.75; }
-      #${dialogId} .axv-foot { font-size:10px; opacity:.7; }
-      #${dialogId} .axv-pp { display:flex; gap:6px; }
-      #${dialogId} .axv-pp-box { flex:1; padding:5px 7px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.25); }
-      #${dialogId} .axv-pp-box .axv-zone-title { font-size:11px; margin-bottom:2px; }
-      #${dialogId} .axv-pp-line { display:flex; gap:5px; align-items:center; margin:2px 0; font-size:11px; opacity:.9; }
-      #${dialogId} .axv-pp-warn { margin-top:2px; font-size:11px; font-weight:900; color:#f8b18a; }
-      #${dialogId} .axv-result { padding:5px 8px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:#000; font-size:11px; }
+      #${dialogId} .axv-mini { font-size:20px; opacity:.78; }
+      #${dialogId} .axv-foot { font-size:20px; opacity:.72; }
+      #${dialogId} .axv-pp { display:flex; gap:3px; }
+      #${dialogId} .axv-pp-box { flex:1; padding:2px 4px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:rgba(0,0,0,.25); }
+      #${dialogId} .axv-pp-box .axv-zone-title { font-size:18px; margin-bottom:0; }
+      #${dialogId} .axv-pp-line { display:flex; gap:3px; align-items:center; margin:0; font-size:21px; opacity:.92; line-height:1.1; }
+      #${dialogId} .axv-pp-warn { margin-top:0; font-size:21px; font-weight:900; color:#f8b18a; }
+      #${dialogId} .axv-result { padding:3px 5px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:#000; font-size:18px; }
       #${dialogId} .axv-result strong { font-weight:900; }
-      #${dialogId} .axv-actions { display:flex !important; gap:10px; justify-content:flex-end; align-items:center; padding:7px 10px; background:linear-gradient(180deg,rgba(0,0,0,.15),rgba(0,0,0,.5)); border:1px solid rgba(255,255,255,.08); border-radius:10px; }
-      #${dialogId} .axv-btn { appearance:none; border:1px solid rgba(248,142,85,.9); background:linear-gradient(180deg,rgba(248,142,85,.25),rgba(82,26,21,.65)); color:#fff; border-radius:9px; padding:7px 16px; font-weight:900; font-size:12px; cursor:pointer; }
+      #${dialogId} .axv-actions { display:flex !important; gap:6px; justify-content:flex-end; align-items:center; margin-top:1px; padding:2px 6px; background:linear-gradient(180deg,rgba(0,0,0,.15),rgba(0,0,0,.5)); border:1px solid rgba(255,255,255,.08); border-radius:10px; flex:0 0 auto; }
+      #${dialogId} .axv-btn { appearance:none; border:1px solid rgba(248,142,85,.9); background:linear-gradient(180deg,rgba(248,142,85,.25),rgba(82,26,21,.65)); color:#fff; border-radius:9px; padding:4px 12px; font-weight:900; font-size:19px; cursor:pointer; }
       #${dialogId} .axv-btn.secondary { border-color:rgba(255,255,255,.2); background:rgba(255,255,255,.06); }
       #${dialogId} .axv-btn:disabled { opacity:.45; cursor:not-allowed; }
     `;
@@ -2333,7 +3029,7 @@ export class CombatManager {
 
     const initLine = view.initiative?.winner ? `
       <div class="axv-foot">
-        Round <strong>${Number(view.round || 1)}</strong> — Initiative : <strong>${CombatManager.#esc(view.initiative.winner === "attacker" ? view.attacker.name : view.defender.name)}</strong>
+        Round <strong>${Number((view.killBill?.armed ? (view.killBill?.round || view.resolved?.result?.round || view.lastResolvedRound || view.round || 1) : (view.round || 1)))}</strong>${view.killBill?.armed ? ` — Kill Bill en cours (même round)` : ` — Initiative : <strong>${CombatManager.#esc(view.initiative.winner === "attacker" ? view.attacker.name : view.defender.name)}</strong>`}
         ${view.initiative?.effect?.label ? ` — ${CombatManager.#esc(view.initiative.effect.label)}` : ``}
       </div>
     ` : ``;
@@ -2351,15 +3047,23 @@ export class CombatManager {
       const sommeMax = Number(side.sommeMax ?? 0);
       const hand = side.hand || [];
       const played = side.played || [];
-      const pickedAttack = played.find(p => p.zone === "attack") || side.picked?.attack || null;
-      const pickedDefense = played.find(p => p.zone === "defense") || side.picked?.defense || null;
       const backImg = "systems/arcane15/assets/axvc01_tarot_v1v1/axvc01__dos-cartes.png";
       const restriction = side.restriction || {};
       const attackOnlyJokerRule = !!restriction.mustJoker && restriction.scope === "attack";
       const choiceJokerRule = !!restriction.mustJoker && (restriction.scope === "choice" || restriction.scope === "attackOrDefense");
-      const attackZoneHint = attackOnlyJokerRule
-        ? '<span style="color:#ffdfb8;font-weight:900;">Joker obligatoire</span>'
-        : (choiceJokerRule ? '<span style="color:#ffdfb8;font-weight:900;">Joker en attaque ou défense</span>' : '');
+      const killBillRolePhase = sideKey === "attacker" ? view.killBill?.attackerPhase : view.killBill?.defenderPhase;
+      const killBillPhaseActive = !!view.killBill?.phaseActive;
+      const pickedAttack = played.find(p => p.zone === "attack") || side.picked?.attack || null;
+      const pickedDefense = played.find(p => p.zone === "defense") || side.picked?.defense || null;
+      const killBillAttackZoneUsed = !killBillPhaseActive || view.killBill?.owner === sideKey;
+      const killBillDefenseZoneUsed = !killBillPhaseActive || view.killBill?.target === sideKey;
+      const attackZoneHint = killBillRolePhase === 'pick-attack'
+        ? '<span style="color:#ffdfb8;font-weight:900;">Kill Bill</span>'
+        : (killBillPhaseActive && !killBillAttackZoneUsed)
+          ? 'Non utilisée'
+          : attackOnlyJokerRule
+            ? '<span style="color:#ffdfb8;font-weight:900;">Joker obligatoire</span>'
+            : (choiceJokerRule ? '<span style="color:#ffdfb8;font-weight:900;">Joker en attaque ou défense</span>' : '');
 
       if (!isSelf) {
         const hiddenCard = `
@@ -2404,7 +3108,10 @@ export class CombatManager {
               }
               let playable = false;
               if (!side.locked) {
-                if (hasAttack && !hasDefense) playable = canDefense;
+                if (killBillRolePhase === 'pick-attack') playable = canAttack;
+                else if (killBillRolePhase === 'pick-defense') playable = canDefense;
+                else if (killBillRolePhase === 'waiting-attack' || killBillRolePhase === 'waiting-defense') playable = false;
+                else if (hasAttack && !hasDefense) playable = canDefense;
                 else if (!hasAttack && hasDefense) playable = canAttack;
                 else playable = canAttack || canDefense;
               }
@@ -2416,7 +3123,7 @@ export class CombatManager {
 
       const primesSel = Array.isArray(side.primes) ? side.primes : [];
       const pensSel = Array.isArray(side.penalites) ? side.penalites : [];
-      const ppDisabled = side.locked ? "disabled" : "";
+      const ppDisabled = (side.locked || killBillPhaseActive) ? "disabled" : "";
       const primesHtml = CombatManager.AXV_PP_PRIMES.map(p => `
         <label class="axv-pp-line"><input type="checkbox" class="axv-pp-check" data-pp-side="${sideKey}" data-pp-kind="prime" data-pp-id="${p.id}" ${primesSel.includes(p.id) ? "checked" : ""} ${ppDisabled}/><span>${CombatManager.#esc(p.label)}</span></label>
       `).join("");
@@ -2425,22 +3132,19 @@ export class CombatManager {
       `).join("");
       const allowedPrimes = Number(side.ppInfo?.allowedPrimes || 0);
       const remyHeaderBadge = side.ppInfo?.hasRemyJulienne
-        ? `<span class="axv-pill" style="background:${side.ppInfo?.remyActive ? '#7f1d1d' : '#5b4636'};color:#fff;border:1px solid ${side.ppInfo?.remyActive ? '#fecaca' : '#e7d3ad'};box-shadow:${side.ppInfo?.remyActive ? '0 0 0 2px rgba(254,202,202,.35)' : 'none'};">Rémy Julienne${side.ppInfo?.remyActive ? ' : RISQUE ×2' : ''}</span>`
+        ? `<span class="axv-pill" style="background:${side.ppInfo?.remyActive ? '#f3c7c7' : '#e7d3ad'};color:#111;border:1px solid ${side.ppInfo?.remyActive ? '#fecaca' : '#d6b98c'};box-shadow:${side.ppInfo?.remyActive ? '0 0 0 2px rgba(254,202,202,.22)' : 'none'};">Rémy Julienne${side.ppInfo?.remyActive ? ' : disponible' : ''}</span>`
+        : "";
+      const killBillButton = (isSelf && side.ppInfo?.hasKillBill)
+        ? `<button type="button" class="axv-btn axv-action-btn" data-action="killbill" style="padding:5px 12px;font-size:18px;border-color:${side.ppInfo?.killBillAvailable ? '#ffd08a' : 'rgba(255,255,255,.2)'};background:${side.ppInfo?.killBillAvailable ? 'linear-gradient(180deg,rgba(255,196,92,.42),rgba(125,43,16,.92))' : 'rgba(255,255,255,.06)'};box-shadow:${side.ppInfo?.killBillAvailable ? '0 0 0 2px rgba(255,196,92,.28), 0 0 14px rgba(255,140,64,.28)' : 'none'};${side.ppInfo?.killBillAvailable ? '' : 'opacity:.75;'}" ${side.ppInfo?.killBillAvailable ? '' : 'disabled'} title="${side.ppInfo?.killBillAvailable ? "Cliquer pour déclencher l'attaque supplémentaire de Kill Bill" : "Kill Bill indisponible pour ce tour"}">⚔ Kill Bill (-1 Destin)</button>`
         : "";
       const remyBanner = side.ppInfo?.hasRemyJulienne
-        ? `<div class="axv-remy-banner" style="margin:8px 0 10px 0;padding:10px 12px;border-radius:10px;border:2px solid ${side.ppInfo?.remyActive ? '#b91c1c' : '#c8a96b'};background:${side.ppInfo?.remyActive ? 'linear-gradient(180deg,#fff1f2 0%,#ffe4e6 100%)' : 'linear-gradient(180deg,#fff8e8 0%,#f6ecd1 100%)'};color:#221;box-shadow:${side.ppInfo?.remyActive ? '0 0 0 3px rgba(185,28,28,.12), 0 6px 18px rgba(0,0,0,.10)' : '0 4px 14px rgba(0,0,0,.08)'};">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-              <div>
-                <div style="font-weight:900;font-size:14px;letter-spacing:.04em;text-transform:uppercase;color:${side.ppInfo?.remyActive ? '#991b1b' : '#7c5a10'};">Atout de personnage — Rémy Julienne</div>
-                <div style="margin-top:2px;font-size:13px;"><strong>Risque</strong> autorise <strong>2 primes</strong> au lieu d'une.</div>
-              </div>
-              <div style="padding:6px 10px;border-radius:999px;background:${side.ppInfo?.remyActive ? '#991b1b' : '#8a6b1f'};color:#fff;font-weight:800;font-size:13px;white-space:nowrap;">${side.ppInfo?.remyActive ? `${allowedPrimes} prime(s) autorisée(s)` : 'En attente de Risque'}</div>
-            </div>
-            ${side.ppInfo?.remyActive ? `<div style="margin-top:8px;font-size:12px;font-weight:700;color:#7f1d1d;">Effet actif ce tour : la pénalité <strong>Risque</strong> a bien ajouté <strong>+1 prime</strong>.</div>` : `<div style="margin-top:8px;font-size:12px;color:#5f4b1b;">Coche <strong>Risque</strong> dans les pénalités pour déclencher l'effet.</div>`}
+        ? `<div class="axv-remy-banner" style="margin:3px 0 4px 0;padding:4px 8px;border-radius:8px;border:1px solid ${side.ppInfo?.remyActive ? '#fca5a5' : '#d4c6a2'};background:${side.ppInfo?.remyActive ? 'rgba(255,235,235,.90)' : 'rgba(255,248,232,.92)'};color:#111;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">
+            <span style="font-size:20px;font-weight:800;line-height:1.15;color:#111;">Atout de personnage — Rémy Julienne disponible</span>
+            ${side.ppInfo?.remyActive ? `<span style="padding:2px 7px;border-radius:999px;background:#991b1b;color:#fff;font-weight:800;font-size:10px;white-space:nowrap;">${allowedPrimes} prime(s)</span>` : ''}
           </div>`
         : "";
-      const remyInfo = side.ppInfo?.hasRemyJulienne
-        ? `<div class="axv-pp-warn" style="background:${side.ppInfo?.remyActive ? '#eef7ec' : '#f7f3ea'};border-color:${side.ppInfo?.remyActive ? '#98c49a' : '#d4c6a2'};color:#222;">Rémy Julienne : <strong>Risque</strong> autorise <strong>2 primes</strong>.${side.ppInfo?.remyActive ? ` Ce tour : <strong>${allowedPrimes}</strong> prime(s) possible(s).` : ''}</div>`
+      const killBillDefenderNotice = (isSelf && sideKey === 'defender' && (killBillRolePhase === 'waiting-attack' || killBillRolePhase === 'pick-defense' || killBillRolePhase === 'waiting-defense'))
+        ? `<div class="axv-kb-defender-notice" style="margin:3px 0 4px 0;padding:5px 8px;border-radius:8px;border:1px solid rgba(255,208,138,.65);background:rgba(255,196,92,.14);color:#ffe7c4;font-size:11px;font-weight:800;line-height:1.2;">${killBillRolePhase === 'waiting-attack' ? "Kill Bill déclenché : l'attaquant prépare une attaque supplémentaire contre toi." : (killBillRolePhase === 'pick-defense' ? "Kill Bill déclenché : choisis maintenant ta carte de défense supplémentaire." : "Kill Bill : ta défense supplémentaire est verrouillée, en attente de résolution.")}</div>`
         : "";
       const ppWarn = (!side.locked && primesSel.length > 0 && pensSel.length === 0) ? `<div class="axv-pp-warn">Prime sélectionnée : choisis au moins une pénalité.</div>` : "";
       const ppCapWarn = (!side.locked && allowedPrimes >= 0 && primesSel.length > allowedPrimes) ? `<div class="axv-pp-warn">Trop de primes sélectionnées : <strong>${allowedPrimes}</strong> autorisée(s) pour ce tour.</div>` : "";
@@ -2450,54 +3154,63 @@ export class CombatManager {
           <div class="axv-self-block ${sideKey === "attacker" ? "axv-self-block--red" : "axv-self-block--green"}">
             <div class="axv-block-header">
               <span class="axv-block-name">${CombatManager.#esc(side.name)}</span>
-              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+              <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
                 ${remyHeaderBadge}
+                ${killBillButton}
                 <span class="axv-pill">${side.ready ? "VALIDÉ ✓" : (side.locked ? "VERROUILLÉ" : "EN COURS")}</span>
               </div>
             </div>
             ${remyBanner}
+            ${killBillDefenderNotice}
             ${handHtml}
             <div class="axv-zones">
               <div class="axv-zone" data-zone="${sideKey}:attack">
                 <div class="axv-zone-title"><span>Attaque</span><span class="axv-mini">${attackZoneHint}</span></div>
-                <div class="axv-zone-slot">${pickedAttack ? CombatManager.#cardHtml(pickedAttack, { draggable: false }) : `<div class="axv-mini">${attackOnlyJokerRule ? "Dépose un joker" : "Dépose une carte"}</div>`}</div>
+                <div class="axv-zone-slot">${pickedAttack ? CombatManager.#cardHtml(pickedAttack, { draggable: false }) : `<div class="axv-mini">${killBillPhaseActive && !killBillAttackZoneUsed ? "Non utilisée pendant Kill Bill" : (killBillRolePhase === 'pick-attack' ? "Dépose une carte d'attaque supplémentaire" : (attackOnlyJokerRule ? "Dépose un joker" : "Dépose une carte"))}</div>`}</div>
               </div>
               <div class="axv-zone" data-zone="${sideKey}:defense">
-                <div class="axv-zone-title"><span>Défense</span><span class="axv-mini">Somme max : ${sommeMax}</span></div>
-                <div class="axv-zone-slot">${pickedDefense ? CombatManager.#cardHtml(pickedDefense, { draggable: false }) : `<div class="axv-mini">Dépose une carte</div>`}</div>
+                <div class="axv-zone-title"><span>Défense</span><span class="axv-mini">${killBillRolePhase === 'pick-defense' ? 'Kill Bill' : (killBillPhaseActive && !killBillDefenseZoneUsed ? 'Non utilisée' : `Somme max : ${sommeMax}`)}</span></div>
+                <div class="axv-zone-slot">${pickedDefense ? CombatManager.#cardHtml(pickedDefense, { draggable: false }) : `<div class="axv-mini">${killBillPhaseActive && !killBillDefenseZoneUsed ? "Non utilisée pendant Kill Bill" : (killBillRolePhase === 'pick-defense' ? "Dépose une carte de défense supplémentaire" : "Dépose une carte")}</div>`}</div>
               </div>
             </div>
             <div class="axv-pp">
               <div class="axv-pp-box"><div class="axv-zone-title"><span>Primes</span><span class="axv-mini">(coche)</span></div>${primesHtml}</div>
-              <div class="axv-pp-box"><div class="axv-zone-title"><span>Pénalités</span><span class="axv-mini">(si prime)</span></div>${pensHtml}${ppWarn}${ppCapWarn}${remyInfo}</div>
+              <div class="axv-pp-box"><div class="axv-zone-title"><span>Pénalités</span><span class="axv-mini">(si prime)</span></div>${pensHtml}${ppWarn}${ppCapWarn}</div>
             </div>
           </div>
         </div>`;
     };
 
     let resultHtml = "";
-    if (view.resolved?.done && view.resolved?.result) {
-      const r = view.resolved.result;
-      const line = (label, ex) => `
-        <div style="margin-top:8px;">
-          <div><strong>${label}</strong></div>
-          <div>${CombatManager.#esc(ex.attackerSide === "attacker" ? view.attacker.name : view.defender.name)} : <strong>${ex.atkTotal}</strong> — ${CombatManager.#esc(ex.defenderSide === "attacker" ? view.attacker.name : view.defender.name)} : <strong>${ex.defTotal}</strong></div>
-          <div>Marge : <strong>${ex.margin}</strong> — ${ex.hit ? `<strong>TOUCHÉ</strong> (${ex.damage})` : `<strong>PARRÉ / ÉVITÉ</strong>`}</div>
-        </div>`;
-      resultHtml = `
-        <div class="axv-result">
-          <div><strong>Résultat du round</strong></div>
-          ${line("Attaque vs Défense", r.first)}
-          ${line("Défense vs Attaque", r.second)}
-        </div>`;
-    }
 
     const side = role === "attacker" ? view.attacker : (role === "defender" ? view.defender : null);
     // Mettre à jour les boutons déjà présents dans .axv-actions (pré-injectés au shell)
     const actionsDiv = root.querySelector(".axv-actions");
     if (actionsDiv) {
       const readyBtn = actionsDiv.querySelector('[data-action="ready"]');
-      if (readyBtn && side) { readyBtn.disabled = !!side.locked; readyBtn.textContent = side.locked ? "Cartes validées ✓" : "Valider mes cartes"; }
+      if (readyBtn && side) {
+        const killBillRolePhase = role === 'attacker' ? view.killBill?.attackerPhase : (role === 'defender' ? view.killBill?.defenderPhase : null);
+        let disabled = !!side.locked;
+        let label = side.locked ? "Cartes validées ✓" : "Valider mes cartes";
+        if (view.resolved?.done && view.pendingRoundAdvance && !view.killBill?.armed) {
+          label = "Passer au round suivant";
+          disabled = false;
+        } else if (killBillRolePhase === 'pick-attack') {
+          label = "Valider l'attaque Kill Bill";
+          disabled = !!side.locked;
+        } else if (killBillRolePhase === 'waiting-attack') {
+          label = "En attente de l'attaque Kill Bill";
+          disabled = true;
+        } else if (killBillRolePhase === 'pick-defense') {
+          label = "Valider la défense Kill Bill";
+          disabled = !!side.locked;
+        } else if (killBillRolePhase === 'waiting-defense') {
+          label = "En attente de la défense Kill Bill";
+          disabled = true;
+        }
+        readyBtn.disabled = disabled;
+        readyBtn.textContent = label;
+      }
       if (game.user?.isGM && !actionsDiv.querySelector('[data-action="end"]')) {
         const endBtn = document.createElement("button"); endBtn.type = "button"; endBtn.className = "axv-btn secondary axv-action-btn"; endBtn.dataset.action = "end"; endBtn.textContent = "Terminer le combat"; actionsDiv.appendChild(endBtn);
       }
@@ -2705,7 +3418,12 @@ if (!allowedSide || sideKey !== allowedSide) return;
       const localCheck = CombatManager.#canPlaceCardInZone({
         initiative: view.initiative,
         attacker: view.attacker,
-        defender: view.defender
+        defender: view.defender,
+        picks: {
+          attacker: { attack: view.attacker?.picked?.attack?.id || null, defense: view.attacker?.picked?.defense?.id || null },
+          defender: { attack: view.defender?.picked?.attack?.id || null, defense: view.defender?.picked?.defense?.id || null }
+        },
+        killBill: view.killBill || null
       }, sideKey, optimisticPlayed, card, zoneKey);
       if (!localCheck.ok) {
         ui.notifications?.warn?.(localCheck.toast || "Carte non jouable.");
@@ -2782,9 +3500,27 @@ if (!allowedSide || sideKey !== allowedSide) return;
     // Instead: we listen to window footer buttons via DOM query.
     const runAction = async (action) => {
       if (action === "ready") {
+        const stateNow = getView();
+        console.log("[ARCANE XV][COMBAT][KILL BILL][CLIENT][READY]", {
+          sessionId,
+          role,
+          killBillPhase: role === 'attacker' ? stateNow?.killBill?.attackerPhase : stateNow?.killBill?.defenderPhase,
+          bonusCard: role === stateNow?.killBill?.owner ? stateNow?.killBill?.attack?.id || null : stateNow?.killBill?.defense?.id || null,
+          normalAttack: stateNow?.[role]?.picked?.attack?.id || null,
+          normalDefense: stateNow?.[role]?.picked?.defense?.id || null
+        });
         console.log("[ARCANE XV][COMBAT][UI] ready clicked", { sessionId, role });
         await CombatManager.#emit({
           type: "axvCombat:ready",
+          toUserId: CombatManager.#activeGMId(),
+          fromUserId: game.user.id,
+          sessionId,
+          role
+        });
+      }
+      if (action === "killbill") {
+        await CombatManager.#emit({
+          type: "axvCombat:killBill",
           toUserId: CombatManager.#activeGMId(),
           fromUserId: game.user.id,
           sessionId,
@@ -3288,6 +4024,68 @@ if (!allowedSide || sideKey !== allowedSide) return;
     };
   }
 
+  static #killBillChatHtml(session, attackerActor, defenderActor) {
+    const r = session?.resolved?.result;
+    const ex = r?.killBill?.exchange;
+    if (!r || !ex) return CombatManager.#chatHtml(session, attackerActor, defenderActor);
+
+    const applied = (r.killBill?.applied && r.killBill.applied[0]) || null;
+    const atkActor = ex.attackerSide === 'attacker' ? attackerActor : defenderActor;
+    const defActor = ex.defenderSide === 'attacker' ? attackerActor : defenderActor;
+    const atkCardVal = ex.attackCard?.isJoker ? 0 : Number(ex.attackCard?.value ?? 0);
+    const defCardVal = ex.defenseCard?.isJoker ? 0 : Number(ex.defenseCard?.value ?? 0);
+    const atkImg = CombatManager.#esc(ex.attackCard?.img || CombatManager.#fallbackCardImg(ex.attackCard));
+    const defImg = CombatManager.#esc(ex.defenseCard?.img || CombatManager.#fallbackCardImg(ex.defenseCard));
+    const outcomeHtml = ex.hit
+      ? `<strong style="color:#236c2b;">TOUCHÉ</strong>${applied?.after != null ? ` — Vitalité : ${applied.before} → ${applied.after}` : ''}${ex.damage > 0 ? ` — Dégâts : <strong>${ex.damage}</strong>` : ''}`
+      : `<strong style="color:#888;">PARRÉ / ÉVITÉ</strong>`;
+
+    return `
+      <div class="axv-chat-card" style="border:1px solid #d7dbe2;border-radius:10px;background:linear-gradient(180deg,#fff,#f7f9fc);color:#1f2937;font-size:11px;line-height:1.4;word-break:break-word;">
+        <div style="padding:6px 8px;background:linear-gradient(90deg,#5b214f,#7c3aed);color:#fff;font-weight:900;font-size:12px;">⚔ Kill Bill — Attaque supplémentaire issue d'un atout de personnage</div>
+        <div style="padding:6px 8px;background:#faf5ff;border-bottom:1px solid #eadcff;font-size:11px;color:#581c87;">
+          <div><strong>Round ${Number(r.round || session?.round || 1)}</strong> — fin du même round de combat.</div>
+          <div style="margin-top:2px;">${CombatManager.#esc(atkActor?.name)} porte une attaque supplémentaire à ${CombatManager.#esc(defActor?.name)}. Aucune riposte supplémentaire n'est jouée : seule la résolution Attaque vs Défense est effectuée.</div>
+        </div>
+        <div style="padding:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:start;">
+          <div style="padding:6px;border-radius:6px;background:#fff7f2;border:1px solid #f0d2c0;min-width:0;">
+            ${CombatManager.#chatActorBadge(atkActor?.name || ex.attackerSide, atkActor, '#c65d2b')}
+            <div style="display:flex;align-items:flex-start;gap:6px;margin-top:6px;min-width:0;">
+              <img draggable="false" src="${atkImg}" style="width:44px;height:66px;object-fit:cover;border-radius:4px;background:#111;flex:0 0 auto;" onerror="this.src='${CombatManager.#esc(CombatManager.#fallbackCardImg(null))}';this.onerror=null;"/>
+              <div style="font-size:11px;line-height:1.5;min-width:0;">
+                <div><strong>Attaque</strong></div>
+                <div>Carte : <strong>${CombatManager.#esc(ex.attackCard?.name || 'Joker')}</strong> (${atkCardVal})</div>
+                <div>Compétence : <strong>${CombatManager.#esc(ex.attackSkillLabel ?? 'Combat')}</strong> +${ex.attackSkillVal ?? '?'}</div>
+                <div>Arme : <strong>${CombatManager.#esc(ex.weaponName || 'Poings')}</strong> ${Number(ex.weaponModVal || 0) >= 0 ? '+' : ''}${Number(ex.weaponModVal || 0)}</div>
+                ${ex.atkStateMods?.length ? `<div>États : ${CombatManager.#esc(ex.atkStateMods.join(', '))}</div>` : ''}
+                <div style="margin-top:4px;font-size:14px;font-weight:900;color:#7a3d14;">Total Attaque : ${ex.atkTotal}</div>
+              </div>
+            </div>
+          </div>
+          <div style="padding:6px;border-radius:6px;background:#f4f8ff;border:1px solid #cfdbf6;min-width:0;">
+            ${CombatManager.#chatActorBadge(defActor?.name || ex.defenderSide, defActor, '#4467c4')}
+            <div style="display:flex;align-items:flex-start;gap:6px;margin-top:6px;min-width:0;">
+              <img draggable="false" src="${defImg}" style="width:44px;height:66px;object-fit:cover;border-radius:4px;background:#111;flex:0 0 auto;" onerror="this.src='${CombatManager.#esc(CombatManager.#fallbackCardImg(null))}';this.onerror=null;"/>
+              <div style="font-size:11px;line-height:1.5;min-width:0;">
+                <div><strong>Défense</strong></div>
+                <div>Carte : <strong>${CombatManager.#esc(ex.defenseCard?.name || 'Joker')}</strong> (${defCardVal})</div>
+                <div>Compétence : <strong>Défense</strong> +${ex.defenseSkillVal ?? '?'}</div>
+                <div>Protection : ${Number(ex.protectionVal || 0) >= 0 ? '+' : ''}${Number(ex.protectionVal || 0)}</div>
+                ${ex.defStateMods?.length ? `<div>États : ${CombatManager.#esc(ex.defStateMods.join(', '))}</div>` : ''}
+                <div style="margin-top:4px;font-size:14px;font-weight:900;color:#1e4ea1;">Total Défense : ${ex.defTotal}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="padding:0 8px 8px 8px;">
+          <div style="padding:8px 10px;border-top:1px solid #eee;background:${ex.hit ? '#f0ffe8' : '#f7f7f7'};font-size:18px;line-height:1.6;border-radius:0 0 8px 8px;">
+            <div><strong>${CombatManager.#esc(atkActor?.name || ex.attackerSide)}</strong> attaque <strong>${CombatManager.#esc(defActor?.name || ex.defenderSide)}</strong></div>
+            <div><strong>${ex.atkTotal}</strong> vs <strong>${ex.defTotal}</strong> → Marge <strong>${ex.margin}</strong> — ${outcomeHtml}</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
   static #chatHtml(session, attackerActor, defenderActor) {
     const r = session.resolved?.result;
     if (!r) return `<div>Combat résolu.</div>`;
@@ -3383,12 +4181,12 @@ if (!allowedSide || sideKey !== allowedSide) return;
               </div>` : ``}
 
             <details style="margin-top:6px;">
-              <summary style="cursor:pointer;font-size:15px;font-weight:800;color:#374151;">Détail technique du combat</summary>
+              <summary style="cursor:pointer;font-size:18px;font-weight:800;color:#374151;">Détail technique du combat</summary>
               <div style="margin-top:6px;">
                 <div style="padding:6px;border-radius:6px;background:#fff7f2;border:1px solid #f0d2c0;margin-bottom:6px;">
                   ${CombatManager.#chatActorBadge(atkActor?.name || ex.attackerSide, atkActor, '#c65d2b')}
                   <div style="display:flex;gap:6px;margin-top:4px;">
-                    <div style="font-size:15px;line-height:1.75;">
+                    <div style="font-size:18px;line-height:1.75;">
                       <div>Carte : <strong>${CombatManager.#esc(ex.attackCard?.name || 'Joker')}</strong> (${atkCardVal}) &nbsp;|&nbsp; ${CombatManager.#esc(ex.attackSkillLabel ?? 'Combat')} +${ex.attackSkillVal ?? '?'} &nbsp;|&nbsp; Arme ${signed(weaponMod)}${ex.atkPPAdj ? ` &nbsp;|&nbsp; Primes/Pénalités ${signed(ex.atkPPAdj)}` : ''}${ex.atkStateAdj ? ` &nbsp;|&nbsp; États ${signed(ex.atkStateAdj)}` : ''}</div>
                       <div style="font-size:18px;font-weight:900;color:#7a3d14;">Total Attaque : ${ex.atkTotal}</div>
                       ${ex.atkMods?.length ? `<div style="color:#7a3d14;font-style:italic;">PP : ${CombatManager.#esc(ex.atkMods.join(', '))}</div>` : ''}
@@ -3402,7 +4200,7 @@ if (!allowedSide || sideKey !== allowedSide) return;
                 <div style="padding:6px;border-radius:6px;background:#f4f8ff;border:1px solid #cfdbf6;">
                   ${CombatManager.#chatActorBadge(defActor?.name || ex.defenderSide, defActor, '#4467c4')}
                   <div style="display:flex;gap:6px;margin-top:4px;">
-                    <div style="font-size:15px;line-height:1.75;">
+                    <div style="font-size:18px;line-height:1.75;">
                       <div>Carte : <strong>${CombatManager.#esc(ex.defenseCard?.name || 'Joker')}</strong> (${defCardVal}) &nbsp;|&nbsp; Défense +${ex.defenseSkillVal ?? '?'} &nbsp;|&nbsp; Protection +${protVal}${ex.defPPAdj ? ` &nbsp;|&nbsp; Primes/Pénalités ${signed(ex.defPPAdj)}` : ''}${ex.defStateAdj ? ` &nbsp;|&nbsp; États ${signed(ex.defStateAdj)}` : ''}</div>
                       <div style="font-size:18px;font-weight:900;color:#1e4ea1;">Total Défense : ${ex.defTotal}</div>
                       ${ex.defMods?.length ? `<div style="color:#1e4ea1;font-style:italic;">PP : ${CombatManager.#esc(ex.defMods.join(', '))}</div>` : ''}
@@ -3413,7 +4211,7 @@ if (!allowedSide || sideKey !== allowedSide) return;
                   </div>
                 </div>
 
-                <div style="margin-top:6px;padding:8px 10px;border-top:1px solid #eee;background:${ex.hit ? '#f0ffe8' : '#f7f7f7'};font-size:15px;line-height:1.6;">
+                <div style="margin-top:6px;padding:8px 10px;border-top:1px solid #eee;background:${ex.hit ? '#f0ffe8' : '#f7f7f7'};font-size:18px;line-height:1.6;">
                   <div><strong>${ex.atkTotal}</strong> vs <strong>${ex.defTotal}</strong> → Marge <strong>${ex.margin}</strong> — ${ex.hit ? `<strong style="color:#236c2b;">TOUCHÉ</strong>` : `<strong style="color:#888;">PARRÉ / ÉVITÉ</strong>`}</div>
                   ${ex.hit ? `<div style="font-size:18px;font-weight:900;color:#b91c1c;">Dégâts finaux : ${ex.damage}</div><div style="font-size:13px;color:#7a3d14;">Base : marge ${ex.margin}${ex.damageMods?.length ? ` • ${CombatManager.#esc(ex.damageMods.join(', '))}` : ""}</div>` : ''}
                 </div>
@@ -3429,6 +4227,7 @@ if (!allowedSide || sideKey !== allowedSide) return;
 
     const firstApplied = nextApplied(r.first);
     const secondApplied = nextApplied(r.second);
+    const killBillApplied = r.killBill?.exchange ? nextApplied(r.killBill.exchange) : null;
 
     const atkWeaponName = CombatManager.#esc(r.attackerWeapon?.name || 'Poings');
     const defWeaponName = CombatManager.#esc(r.defenderWeapon?.name || 'Poings');
@@ -3446,6 +4245,7 @@ if (!allowedSide || sideKey !== allowedSide) return;
         <div style="padding:6px 8px;">
           ${exHtml('Échange 1 — ' + CombatManager.#esc(firstAtkActor?.name) + ' attaque', r.first, firstAtkActor, firstDefActor, firstApplied)}
           ${exHtml('Échange 2 — ' + CombatManager.#esc(secondAtkActor?.name) + ' attaque', r.second, secondAtkActor, secondDefActor, secondApplied)}
+          ${r.killBill?.exchange ? `<div style="margin-top:6px;padding:6px 8px;border:1px solid #e9d5ff;border-radius:8px;background:#faf5ff;color:#581c87;font-weight:800;">Kill Bill — Attaque supplémentaire issue d'un atout de personnage</div>` + exHtml('Kill Bill — ' + CombatManager.#esc((r.killBill.exchange.attackerSide === 'attacker' ? attackerActor : defenderActor)?.name) + " attaque supplémentaire issue d'un atout de personnage", r.killBill.exchange, r.killBill.exchange.attackerSide === 'attacker' ? attackerActor : defenderActor, r.killBill.exchange.defenderSide === 'attacker' ? attackerActor : defenderActor, killBillApplied) : ``}
         </div>
       </div>`;
   }
@@ -3673,20 +4473,6 @@ function AXV_bindChatDiagnostics() {
   const chat = AXV_getChatScroller();
   if (!chat || chat.dataset.axvChatDiagBound === '1') return;
   chat.dataset.axvChatDiagBound = '1';
-
-  chat.addEventListener('wheel', (ev) => {
-    console.log('[ARCANE XV][CHAT][WHEEL]', {
-      deltaY: ev.deltaY,
-      cancelable: ev.cancelable,
-      defaultPrevented: ev.defaultPrevented,
-      target: ev.target?.className || ev.target?.tagName || null,
-      before: chat.scrollTop
-    });
-
-    requestAnimationFrame(() => {
-      console.log('[ARCANE XV][CHAT][WHEEL][AFTER]', { after: chat.scrollTop });
-    });
-  }, { passive: true });
 
   chat.addEventListener('scroll', () => {
     console.log('[ARCANE XV][CHAT][SCROLL]', {

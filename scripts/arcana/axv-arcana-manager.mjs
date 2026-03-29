@@ -2573,36 +2573,13 @@ export class ArcanaManager {
         runtime.statuses.killBillExtraAttack = true;
         runtime.statuses.killBillExtraAttackAt = Date.now();
         await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
-        const combatData = writableActor.system?.combat || {};
-        let equippedWeaponKey = null;
-        for (const [key, w] of Object.entries(combatData)) {
-          if (!String(key || '').startsWith('arme')) continue;
-          if (!w?.equipe) continue;
-          if (!String(w?.nom || '').trim()) continue;
-          equippedWeaponKey = key;
-          break;
-        }
-        const hasTarget = Array.from(game.user?.targets || []).length > 0;
-        let body = `${writableActor.name} peut immédiatement porter une deuxième attaque au corps à corps.`;
-        if (!hasTarget) {
-          body += ` <div style="margin-top:6px;">Sélectionne une cible puis clique de nouveau sur l'icône d'attaque.</div>`;
-        } else if (!equippedWeaponKey) {
-          body += ` <div style="margin-top:6px;">Aucune arme équipée : la deuxième attaque partira à mains nues.</div>`;
+        const inCombatWindow = !!game.arcane15?.combat;
+        let body = `${writableActor.name} prépare une deuxième attaque immédiate au corps à corps.`;
+        body += ` <div style="margin-top:6px;">Déclenche ensuite <strong>Kill Bill</strong> depuis la fenêtre de combat : l'initiative n'est pas relancée, le défenseur choisira une nouvelle carte de défense, puis la contre-attaque normale du round sera résolue.</div>`;
+        if (!inCombatWindow) {
+          body += ` <div style="margin-top:6px;">Ouvre la fenêtre de combat pour résoudre l'attaque bonus.</div>`;
         }
         await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body, accent: '#8b1e18' }) });
-        if (hasTarget && game.arcane15?.combat?.openAttackFromWeapon) {
-          try {
-            await game.arcane15.combat.openAttackFromWeapon(writableActor, equippedWeaponKey);
-            const refreshedRuntime = foundry.utils.deepClone(writableActor.getFlag?.('arcane15', 'arcanaRuntime') || {});
-            refreshedRuntime.statuses ||= {};
-            delete refreshedRuntime.statuses.killBillExtraAttack;
-            delete refreshedRuntime.statuses.killBillExtraAttackAt;
-            await writableActor.setFlag('arcane15', 'arcanaRuntime', refreshedRuntime);
-          } catch (err) {
-            console.warn('[ARCANE XV][ATOUT][KILL BILL] immediate extra attack failed', err);
-            ui.notifications?.warn?.('Kill Bill : impossible de lancer immédiatement la deuxième attaque. Sélectionne une cible puis clique sur Attaque.');
-          }
-        }
         break;
       }
       case 'jusquici-tout-va-bien':
