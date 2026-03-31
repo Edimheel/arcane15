@@ -1103,9 +1103,9 @@ export class CardManager {
           <div>
             <div class="axv-title">${actor.name} — ${skillName}</div>
             <div class="axv-sub">Clique sur une carte pour la jouer. Le MJ fixe la difficulté avant le résultat.</div>
-            ${modifiersLine ? `<div class="axv-sub">${modifiersLine}</div>` : ""}
+            ${modifiersLine ? `<div class="axv-sub">Modificateurs : ${modifiersLine}</div>` : `<div class="axv-sub">Modificateurs : aucun</div>`}
           </div>
-          <div class="axv-badge">Compétence : ${skillValue}${malEnPointMod ? ` <span style="opacity:.85;">(${baseSkillValue} ${malEnPointMod})</span>` : ""}</div>
+          <div class="axv-badge">Compétence finale : ${skillValue}</div>
         </div>
         <div class="axv-hint">Main : ${cards.length} carte(s)</div>
         <div class="axv-grid">${cardsHtml || `<div style="opacity:.8;">Aucune carte en main.</div>`}</div>
@@ -1191,8 +1191,9 @@ export class CardManager {
       <img src="${cardImg}" style="width:84px; height:126px; object-fit:cover; border-radius:10px; border:1px solid rgba(0,0,0,.25); flex:0 0 auto;" />
       <div style="flex:1; min-width:0; overflow-wrap:anywhere; word-break:break-word;">
         <div style="font-weight:900; font-size:14px; margin-bottom:6px; overflow-wrap:anywhere; word-break:break-word;">${cardName}</div>
-        <div>Compétence : <strong>${skillValue}</strong></div>
-        ${modifiersLine ? `<div>Modificateurs : <strong>${modifiersLine}</strong></div>` : ""}
+        <div>Compétence de base : <strong>${baseSkillValue}</strong></div>
+        <div>Modificateurs : <strong>${modifiersLine || "aucun"}</strong></div>
+        <div>Compétence finale : <strong>${skillValue}</strong></div>
         <div>Carte : <strong>+${cardValue}</strong></div>
         <div>Difficulté (MJ) : <strong>${difficulty}</strong></div>
         <div style="margin-top:10px; font-weight:900; font-size:18px;">TOTAL : ${finalTotal}</div>

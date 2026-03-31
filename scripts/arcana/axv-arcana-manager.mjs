@@ -2636,15 +2636,39 @@ export class ArcanaManager {
         ui.notifications?.warn?.('L’effet héroïque de L’arnacoeur s’utilise pendant un combat, via l’interface de combat.');
         break;
       }
-      case 'actor-studio': {
-        await writableActor.setFlag('arcane15', 'pendingDestinyRecovery', { source: atout.key, at: Date.now() });
-        const draw = await ArcanaManager.#drawTemporaryCard(writableActor, `${atout.name} — bonus Connaissance`);
-        if (!draw) return;
-        runtime.pendingKnowledgeBonus = { value: Number(draw.value || 0), label: atout.name };
-        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
-        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body: `Bonus stocké pour le prochain test de Connaissance : <strong>+${draw.value}</strong>.`, accent: '#8b1e18' }) });
-        break;
-      }
+     case 'actor-studio': {
+  await writableActor.setFlag('arcane15', 'pendingDestinyRecovery', { source: atout.key, at: Date.now() });
+  const draw = await ArcanaManager.#drawTemporaryCard(writableActor, `${atout.name} — bonus Connaissance`);
+  if (!draw) return;
+
+  runtime.pendingKnowledgeBonus = { value: Number(draw.value || 0), label: atout.name };
+  await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+
+  await ChatMessage.create({
+    speaker: ChatMessage.getSpeaker({ actor: writableActor }),
+    content: renderPersonalAtoutChatCard({
+      title: atout.name,
+      mode: 'Effet héroïque',
+      actorName: writableActor.name,
+      body: `
+        <div style="display:flex; align-items:center; gap:12px;">
+          <img
+            src="${draw.img || 'icons/svg/hazard.svg'}"
+            alt="${draw.name || 'Carte'}"
+            style="width:72px; height:auto; border-radius:6px; box-shadow:0 0 0 1px rgba(0,0,0,.25);"
+          />
+          <div>
+            <div><strong>Carte piochée :</strong> ${draw.name || 'Carte'}</div>
+            <div><strong>Valeur :</strong> +${Number(draw.value || 0)}</div>
+            <div style="margin-top:4px;">Bonus stocké pour le prochain test de Connaissance.</div>
+          </div>
+        </div>
+      `,
+      accent: '#3d5875'
+    })
+  });
+  break;
+}
       case 'boite-de-chocolats': {
         const actors = (game.actors?.contents ?? []).filter(a => a.type === 'personnage' && a.hasPlayerOwner && !(a.system?.stats?.malEnPoint || a.getFlag?.('arcane15', 'malEnPoint')));
         const parts = [];
