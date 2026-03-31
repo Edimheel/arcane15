@@ -2410,8 +2410,8 @@ export class ArcanaManager {
         if (!artComedieKey) return ui.notifications?.warn?.('Compétence Art (Comédie) introuvable.');
 
         const actorRoll = await ArcanaManager.#rollFixedSkill(writableActor, artComedieKey, {
-          title: `${writableActor.name} — ${atout.name}`,
-          subtitle: `${atout.name} : ${writableActor.name} choisit une carte pour son opposition.`,
+          title: `Main — ${writableActor.name} — ${atout.name}`,
+          subtitle: `Activation de l’atout : ${writableActor.name} choisit une carte pour son opposition.`,
           difficulty: 0,
           chatTitle: `${writableActor.name} — ${atout.name}`,
           chatNote: `Opposition active : total de ${writableActor.name}`,
@@ -2628,24 +2628,12 @@ export class ArcanaManager {
         await ArcanaManager.#createGMOnlyChatMessage({ actor: writableActor, content: `<div class="axv-arcana-gm-card"><div><strong>${atout.name}</strong> — ${writableActor.name}</div><div style="margin-top:6px;">Obtient un service illégal pour la séance (arme, drogue, etc.).</div></div>` });
         break;
       case 'larnacoeur': {
-        if (!target) return ui.notifications?.warn?.('Cible un adversaire pour utiliser cet effet héroïque.');
-        if (!artComedieKey) return ui.notifications?.warn?.('Compétence Art (Comédie) introuvable.');
-        await writableActor.setFlag('arcane15', 'pendingDestinyRecovery', { source: atout.key, at: Date.now() });
-        const difficulty = Number(target.system?.competences?.psychologie?.total ?? 0);
-        const result = await ArcanaManager.#rollFixedSkill(writableActor, artComedieKey, {
-          title: `${writableActor.name} — ${atout.name}`,
-          subtitle: `${atout.name} : opposition active simplifiée contre ${target.name}`,
-          difficulty,
-          chatTitle: `${writableActor.name} — ${atout.name}`,
-          chatNote: `Résolution contre ${target.name}`,
-          useStandardSkillHandSubtitle: true
-        });
-        if (!result) return;
-        if (result.success) {
-          runtime.larnacoeurCombat = { targetId: target.id, targetName: target.name, freePrimes: 2, label: atout.name };
-          await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        const combatContext = game.arcane15?.combat?.getActiveSessionContext?.(writableActor) ?? null;
+        if (combatContext) {
+          ui.notifications?.info?.('Utilise le bouton L’arnacoeur dans l’interface de combat pour cet effet héroïque.');
+          break;
         }
-        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: `<div class="axv-chat-card"><div style="padding:10px 12px;">${result.success ? `<strong>${atout.name}</strong> : deux primes gratuites contre ${target.name} au début de chaque round.` : `${target.name} résiste à <strong>${atout.name}</strong>.`}</div></div>` });
+        ui.notifications?.warn?.('L’effet héroïque de L’arnacoeur s’utilise pendant un combat, via l’interface de combat.');
         break;
       }
       case 'actor-studio': {
@@ -4186,5 +4174,60 @@ Héroïque : ${heroicText}">
     axvPossessionLog("DEBUG", "dump possession acteur", payload);
     return payload;
   }
+
+  static async resolveLarnacoeurCombatActivation(actor, target, { sessionId = null, round = null, role = null, gmOnlyChat = true } = {}) {
+    const writableActor = ArcanaManager.#getWritableActor(actor) ?? actor;
+    if (!writableActor || !target) return null;
+
+    const atout = ArcanaManager.getCharacterAtouts(writableActor).find(entry => entry.key === 'larnacoeur') ?? PERSONAL_BY_KEY.get('larnacoeur') ?? null;
+    const skills = writableActor.system?.competences ?? {};
+    const artComedieKey = Object.keys(skills).find(key => key.startsWith('art') && normalizeText(skills[key]?.label || '').includes('comedie')) || Object.keys(skills).find(key => key.startsWith('art')) || null;
+    if (!artComedieKey) {
+      ui.notifications?.warn?.('Compétence Art (Comédie) introuvable.');
+      return null;
+    }
+
+    const actorRoll = await ArcanaManager.#rollFixedSkill(writableActor, artComedieKey, {
+      title: `Main — ${writableActor.name} — ${atout?.name || 'L’arnacoeur'}`,
+      subtitle: `Activation de l’atout héroïque : choisis une carte pour embobiner ${target.name}${round ? ` (round ${round})` : ''}.`,
+      difficulty: 0,
+      chatTitle: `${writableActor.name} — ${atout?.name || 'L’arnacoeur'}`,
+      chatNote: `Opposition active : total d’Art (Comédie)${sessionId ? ` — combat ${sessionId}` : ''}`,
+      useStandardSkillHandSubtitle: false,
+      gmOnlyChat,
+      playedByOwner: true
+    });
+    if (!actorRoll) return null;
+
+    const targetRoll = await ArcanaManager.#rollFixedSkill(target, 'psychologie', {
+      title: `Main — ${target.name} — Résister à ${atout?.name || 'L’arnacoeur'}`,
+      subtitle: `Activation de l’atout héroïque : choisis une carte pour résister à ${writableActor.name}${round ? ` (round ${round})` : ''}.`,
+      difficulty: 0,
+      chatTitle: `${target.name} — Résister à ${atout?.name || 'L’arnacoeur'}`,
+      chatNote: `Opposition active : total de Psychologie${sessionId ? ` — combat ${sessionId}` : ''}`,
+      useStandardSkillHandSubtitle: false,
+      gmOnlyChat,
+      playedByOwner: true
+    });
+    if (!targetRoll) return null;
+
+    const actorTotal = Number(actorRoll.finalTotal || 0);
+    const targetTotal = Number(targetRoll.finalTotal || 0);
+    const margin = actorTotal - targetTotal;
+    return {
+      atoutKey: 'larnacoeur',
+      atoutName: atout?.name || 'L’arnacoeur',
+      sessionId,
+      round: Number(round || 0),
+      role,
+      success: margin > 0,
+      margin,
+      actorTotal,
+      targetTotal,
+      targetId: target.id,
+      targetName: target.name
+    };
+  }
+
 
 }

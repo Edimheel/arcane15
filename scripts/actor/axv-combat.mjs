@@ -157,6 +157,11 @@ export class CombatManager {
       return CombatManager.#gmArmKillBill(data);
     }
 
+    if (data.type === "axvCombat:larnacoeur") {
+      if (!game.user.isGM) return;
+      return CombatManager.#gmArmLarnacoeur(data);
+    }
+
     if (data.type === "axvCombat:end") {
       if (!game.user.isGM) return;
       return CombatManager.#gmEndSession(data);
@@ -961,6 +966,7 @@ export class CombatManager {
       },
       killBill: CombatManager.#emptyKillBillState(),
       pendingRoundAdvance: false,
+      postRoundKillBillPrompt: false,
       roundCardsCycled: false,
       resolved: { done: false, revealed: false, result: null }
     };
@@ -1212,6 +1218,106 @@ export class CombatManager {
   static #killBillHasAtout(actor) {
     const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
     return !!(actor && ArcanaManager?.getCharacterAtouts && ArcanaManager.getCharacterAtouts(actor).some(a => a.key === 'kill-bill'));
+  }
+
+  static #hasCharacterAtout(actor, atoutKey) {
+    const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
+    return !!(actor && ArcanaManager?.getCharacterAtouts && ArcanaManager.getCharacterAtouts(actor).some(a => a.key === atoutKey));
+  }
+
+  static #larnacoeurHasAtout(actor) {
+    return CombatManager.#hasCharacterAtout(actor, 'larnacoeur');
+  }
+
+  static getActiveSessionContext(actorOrId) {
+    const actorId = typeof actorOrId === 'string' ? actorOrId : actorOrId?.id;
+    if (!actorId) return null;
+
+    if (game.user?.isGM) {
+      for (const session of CombatManager.#gmSessions.values()) {
+        if (!session || session.ended) continue;
+        if (String(session.attacker?.actorId || '') === String(actorId)) {
+          return {
+            sessionId: session.sessionId,
+            role: 'attacker',
+            opponentActorId: session.defender?.actorId ?? null,
+            opponentName: session.defender?.name ?? null,
+            round: Number(session.round || 1)
+          };
+        }
+        if (String(session.defender?.actorId || '') === String(actorId)) {
+          return {
+            sessionId: session.sessionId,
+            role: 'defender',
+            opponentActorId: session.attacker?.actorId ?? null,
+            opponentName: session.attacker?.name ?? null,
+            round: Number(session.round || 1)
+          };
+        }
+      }
+    }
+
+    for (const [sessionId, state] of CombatManager.#clientState.entries()) {
+      const view = state?.view;
+      if (!view) continue;
+      if (String(view.attacker?.actorId || '') === String(actorId)) {
+        return {
+          sessionId,
+          role: 'attacker',
+          opponentActorId: view.defender?.actorId ?? null,
+          opponentName: view.defender?.name ?? null,
+          round: Number(view.round || 1)
+        };
+      }
+      if (String(view.defender?.actorId || '') === String(actorId)) {
+        return {
+          sessionId,
+          role: 'defender',
+          opponentActorId: view.attacker?.actorId ?? null,
+          opponentName: view.attacker?.name ?? null,
+          round: Number(view.round || 1)
+        };
+      }
+    }
+
+    return null;
+  }
+
+  static #getLarnacoeurRoundState(session, role) {
+    const roleInfo = role === 'attacker' ? session?.attacker : session?.defender;
+    const otherInfo = role === 'attacker' ? session?.defender : session?.attacker;
+    const actor = CombatManager.#actorFromCombatant({ actorId: roleInfo?.actorId, tokenId: roleInfo?.tokenId, sceneId: session?.sceneId });
+    const otherActor = CombatManager.#actorFromCombatant({ actorId: otherInfo?.actorId, tokenId: otherInfo?.tokenId, sceneId: session?.sceneId });
+    const runtime = actor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
+    const effect = runtime?.larnacoeurCombat || null;
+    const sameSession = !!effect?.sessionId && String(effect.sessionId) === String(session?.sessionId || '');
+    const sameRound = Number(effect?.round || 0) === Number(session?.round || 0);
+    const sameTarget = !effect?.targetId || String(effect.targetId) === String(otherActor?.id || '');
+    const attemptedThisRound = !!effect && sameSession && sameRound;
+    const active = attemptedThisRound && sameTarget && effect?.lastSuccess === true && Number(effect?.freePrimes || 0) > 0;
+    return {
+      actor,
+      otherActor,
+      effect,
+      attemptedThisRound,
+      active,
+      freePrimes: active ? Number(effect?.freePrimes || 0) : 0
+    };
+  }
+
+  static #larnacoeurSummaryChatHtml(actor, target, result, atoutName = 'L’arnacoeur') {
+    const margin = Number(result?.margin || 0);
+    const success = !!result?.success;
+    return `
+      <div class="axv-chat-card" style="border:1px solid #bfd0ff;border-radius:10px;background:linear-gradient(180deg,#fff,#f4f8ff);color:#17355f;font-size:12px;line-height:1.45;word-break:break-word;">
+        <div style="padding:8px 10px;background:linear-gradient(90deg,#1d4f91,#2f6bb8);color:#fff;font-weight:900;font-size:13px;">Atout de personnage — ${CombatManager.#esc(atoutName)}</div>
+        <div style="padding:10px 12px;">
+          <div><strong>${CombatManager.#esc(actor?.name || 'Acteur')}</strong> embobine <strong>${CombatManager.#esc(target?.name || 'sa cible')}</strong>.</div>
+          <div style="margin-top:6px;">Art (Comédie) : <strong>${Number(result?.actorTotal || 0)}</strong> • Psychologie : <strong>${Number(result?.targetTotal || 0)}</strong></div>
+          <div style="margin-top:6px;font-weight:900;font-size:14px;color:${success ? '#174ea6' : '#7a1d1d'};">${success ? 'RÉUSSITE' : 'ÉCHEC'}</div>
+          <div style="margin-top:4px;">${success ? `Marge <strong>${margin}</strong> — <strong>2 primes gratuites</strong> pour ce round.` : `${CombatManager.#esc(target?.name || 'La cible')} résiste${margin ? ` (marge <strong>${Math.abs(margin)}</strong>)` : ' (égalité : la cible l’emporte)'}. Aucune prime gratuite.`}</div>
+        </div>
+      </div>`;
   }
 
   static #getDestinyStateForCombat(actor) {
@@ -1475,10 +1581,26 @@ export class CombatManager {
     }
     session.killBill = CombatManager.#emptyKillBillState();
     session.pendingRoundAdvance = false;
+    session.postRoundKillBillPrompt = false;
     session.roundCardsCycled = false;
     session.lastResolvedRound = Number(session.round || 1);
     session.resolved = { done: false, revealed: false, result: null };
     session.round = Number(session.round || 1) + 1;
+
+    for (const side of ["attacker", "defender"]) {
+      try {
+        const actorId = side === "attacker" ? session.attacker.actorId : session.defender.actorId;
+        const tokenId = side === "attacker" ? session.attacker.tokenId : session.defender.tokenId;
+        const actor = CombatManager.#actorFromCombatant({ actorId, tokenId, sceneId: session.sceneId });
+        if (actor) {
+          const runtime = foundry.utils.deepClone(actor.getFlag?.('arcane15', 'arcanaRuntime') || {});
+          if (runtime?.larnacoeurCombat?.sessionId && String(runtime.larnacoeurCombat.sessionId) === String(session.sessionId)) {
+            delete runtime.larnacoeurCombat;
+            await actor.setFlag('arcane15', 'arcanaRuntime', runtime);
+          }
+        }
+      } catch (_) {}
+    }
 
     for (const side of ["attacker", "defender"]) {
       try {
@@ -1604,7 +1726,19 @@ export class CombatManager {
       return CombatManager.#gmBroadcastState(sessionId);
     }
 
+    const roleInfo = role === 'attacker' ? session.attacker : session.defender;
+    const roleActor = CombatManager.#actorFromCombatant({ actorId: roleInfo?.actorId, tokenId: roleInfo?.tokenId, sceneId: session.sceneId });
+    const larnState = CombatManager.#getLarnacoeurRoundState(session, role);
+    const hasRemyJulienne = CombatManager.#hasCharacterAtout(roleActor, 'remy-julienne');
+
     if (checked) {
+      if (kind === 'prime') {
+        const provisionalMax = Number(larnState.freePrimes || 0) + 1 + (hasRemyJulienne ? 1 : 0);
+        if (!list.includes(id) && list.length >= provisionalMax) {
+          session.toast = `Trop de primes sélectionnées : ${provisionalMax} maximum tant que la combinaison n'est pas complétée.`;
+          return CombatManager.#gmBroadcastState(sessionId);
+        }
+      }
       if (!list.includes(id)) list.push(id);
     } else {
       const i = list.indexOf(id);
@@ -1616,6 +1750,93 @@ export class CombatManager {
   }
 
 
+
+  static async #gmArmLarnacoeur(data) {
+    const { sessionId, role } = data;
+    const session = CombatManager.#gmSessions.get(sessionId);
+    if (!session || !["attacker", "defender"].includes(role)) return;
+    if (session.ended || session.resolved?.done) return CombatManager.#gmBroadcastState(sessionId);
+    if (session.killBill?.armed && CombatManager.#isKillBillSelectionPhase(session.killBill?.phase)) {
+      session.toast = "L’arnacoeur n’est pas disponible pendant la résolution de Kill Bill.";
+      return CombatManager.#gmBroadcastState(sessionId);
+    }
+
+    const pick = session.picks[role];
+    if (!pick || pick.locked) {
+      session.toast = "L’arnacoeur doit être activé avant la validation des cartes.";
+      return CombatManager.#gmBroadcastState(sessionId);
+    }
+
+    const roleInfo = role === 'attacker' ? session.attacker : session.defender;
+    const targetInfo = role === 'attacker' ? session.defender : session.attacker;
+    const actor = CombatManager.#actorFromCombatant({ actorId: roleInfo?.actorId, tokenId: roleInfo?.tokenId, sceneId: session.sceneId });
+    const target = CombatManager.#actorFromCombatant({ actorId: targetInfo?.actorId, tokenId: targetInfo?.tokenId, sceneId: session.sceneId });
+
+    if (!actor || !target || !CombatManager.#larnacoeurHasAtout(actor)) {
+      session.toast = `${roleInfo?.name || 'Ce personnage'} n’a pas accès à L’arnacoeur.`;
+      return CombatManager.#gmBroadcastState(sessionId);
+    }
+
+    const currentState = CombatManager.#getLarnacoeurRoundState(session, role);
+    if (currentState.attemptedThisRound) {
+      session.toast = "L’arnacoeur a déjà été activé pour ce round.";
+      return CombatManager.#gmBroadcastState(sessionId);
+    }
+
+    const spend = await CombatManager.#spendDestinyForCombat(actor, 1);
+    if (!spend?.ok) {
+      session.toast = "Pas assez de points de Destin pour L’arnacoeur.";
+      return CombatManager.#gmBroadcastState(sessionId);
+    }
+
+    const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
+    if (!ArcanaManager?.resolveLarnacoeurCombatActivation) {
+      session.toast = "ArcanaManager introuvable pour L’arnacoeur.";
+      return CombatManager.#gmBroadcastState(sessionId);
+    }
+
+    const result = await ArcanaManager.resolveLarnacoeurCombatActivation(actor, target, {
+      sessionId: session.sessionId,
+      round: Number(session.round || 1),
+      role,
+      gmOnlyChat: true
+    });
+    if (!result) {
+      session.toast = "Activation de L’arnacoeur interrompue.";
+      return CombatManager.#gmBroadcastState(sessionId);
+    }
+
+    const runtime = foundry.utils.deepClone(actor.getFlag?.('arcane15', 'arcanaRuntime') || {});
+    runtime.larnacoeurCombat = {
+      sessionId: session.sessionId,
+      round: Number(session.round || 1),
+      targetId: target.id,
+      targetName: target.name,
+      freePrimes: result.success ? 2 : 0,
+      lastSuccess: !!result.success,
+      margin: Number(result.margin || 0),
+      actorTotal: Number(result.actorTotal || 0),
+      targetTotal: Number(result.targetTotal || 0),
+      label: result.atoutName || 'L’arnacoeur',
+      activatedAt: Date.now()
+    };
+    await actor.setFlag('arcane15', 'arcanaRuntime', runtime);
+
+    session.toast = result.success
+      ? `L’arnacoeur réussi : 2 primes gratuites pour ${roleInfo?.name || actor.name} ce round.`
+      : `L’arnacoeur échoue : aucune prime gratuite pour ${roleInfo?.name || actor.name}.`;
+
+    try {
+      await ChatMessage.create({
+        speaker: ChatMessage.getSpeaker({ actor }),
+        content: CombatManager.#larnacoeurSummaryChatHtml(actor, target, result, result.atoutName || 'L’arnacoeur')
+      });
+    } catch (e) {
+      console.error('[ARCANE XV][COMBAT][LARNACOEUR][GM] chat create failed', e);
+    }
+
+    return CombatManager.#gmBroadcastState(sessionId);
+  }
 
   static async #gmArmKillBill(data) {
     const { sessionId, role } = data;
@@ -1657,6 +1878,8 @@ export class CombatManager {
     };
 
     if (session.resolved?.done && session.resolved?.result) {
+      session.pendingRoundAdvance = false;
+      session.postRoundKillBillPrompt = false;
       session.killBill.phase = "pick-attack";
       session.toast = `Kill Bill : ${session[session.killBill.owner].name} doit maintenant choisir sa carte d'attaque supplémentaire.`;
       console.log("[ARCANE XV][COMBAT][KILL BILL][GM][ARM][POST-ROUND]", {
@@ -1817,6 +2040,8 @@ export class CombatManager {
       return CombatManager.#gmKillBillReady(data);
     }
     if (session.resolved?.done && session.pendingRoundAdvance && !session.killBill?.armed) {
+      session.postRoundKillBillPrompt = false;
+      session.toast = null;
       return CombatManager.#gmAdvanceRound({ sessionId });
     }
     const pick = session.picks[role];
@@ -1829,20 +2054,11 @@ export class CombatManager {
       return;
     }
 
-    const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
     const roleInfo = role === 'attacker' ? session.attacker : session.defender;
-    const otherInfo = role === 'attacker' ? session.defender : session.attacker;
-    const roleTokDoc = CombatManager.#tokenDocFrom(session.sceneId, roleInfo?.tokenId);
-    const otherTokDoc = CombatManager.#tokenDocFrom(session.sceneId, otherInfo?.tokenId);
-    const roleActor = roleTokDoc?.actor || CombatManager.#actorFromCombatant({ actorId: roleInfo?.actorId, tokenId: roleInfo?.tokenId, sceneId: session.sceneId });
-    const otherActor = otherTokDoc?.actor || CombatManager.#actorFromCombatant({ actorId: otherInfo?.actorId, tokenId: otherInfo?.tokenId, sceneId: session.sceneId });
-    const runtime = roleActor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
-    const atoutKeys = roleActor && ArcanaManager?.getCharacterAtouts ? ArcanaManager.getCharacterAtouts(roleActor).map(a => a.key) : [];
-    const hasRemyJulienne = atoutKeys.includes('remy-julienne');
-    let freePrimes = 0;
-    if (runtime?.larnacoeurCombat?.freePrimes && (!runtime?.larnacoeurCombat?.targetId || String(runtime.larnacoeurCombat.targetId) === String(otherActor?.id || ''))) {
-      freePrimes += Number(runtime.larnacoeurCombat.freePrimes || 0);
-    }
+    const roleActor = CombatManager.#actorFromCombatant({ actorId: roleInfo?.actorId, tokenId: roleInfo?.tokenId, sceneId: session.sceneId });
+    const larnState = CombatManager.#getLarnacoeurRoundState(session, role);
+    const hasRemyJulienne = CombatManager.#hasCharacterAtout(roleActor, 'remy-julienne');
+    const freePrimes = Number(larnState.freePrimes || 0);
     const paidPrime = (pick.penalites || []).length > 0 ? 1 : 0;
     const remyBonus = (hasRemyJulienne && (pick.penalites || []).includes('risque')) ? 1 : 0;
     const allowedPrimes = paidPrime + freePrimes + remyBonus;
@@ -2178,9 +2394,15 @@ export class CombatManager {
       return;
     }
 
-    session.pendingRoundAdvance = true;
-    session.toast = "Round résolu : vous pouvez déclencher Kill Bill maintenant ou passer au round suivant.";
-    await CombatManager.#gmBroadcastState(sessionId);
+    session.pendingRoundAdvance = false;
+
+    if (!session.ended) {
+      await CombatManager.#resetRoundState(session);
+      session.toast = 'Round terminé : 1 carte repiochée, joker vérifié, round suivant prêt.';
+      await CombatManager.#safeInitDecks(attackerActor);
+      await CombatManager.#safeInitDecks(defenderActor);
+      await CombatManager.#gmBroadcastState(sessionId);
+    }
   }
 
 
@@ -2190,6 +2412,7 @@ export class CombatManager {
     if (!session || session.ended) return;
     if (!session.resolved?.done || !session.pendingRoundAdvance) return CombatManager.#gmBroadcastState(sessionId);
     if (session.killBill?.armed) return CombatManager.#gmBroadcastState(sessionId);
+    session.postRoundKillBillPrompt = false;
 
     const attackerTokDoc = CombatManager.#tokenDocFrom(session.sceneId, session.attacker.tokenId);
     const attackerActor = attackerTokDoc?.actor || CombatManager.#actorFromCombatant({ actorId: session.attacker.actorId, tokenId: session.attacker.tokenId, sceneId: session.sceneId });
@@ -2631,6 +2854,18 @@ export class CombatManager {
     const attackerAllowedPrimes = attackerPaidPrime + attackerFreePrimes + (attackerRemyActive ? 1 : 0);
     const defenderAllowedPrimes = defenderPaidPrime + defenderFreePrimes + (defenderRemyActive ? 1 : 0);
 
+    const attackerPPContext = {
+      hasLarnacoeur: attackerAtoutKeys.includes('larnacoeur'),
+      larnState: CombatManager.#getLarnacoeurRoundState(session, 'attacker'),
+      otherActor: defenderActor || null
+    };
+
+    const defenderPPContext = {
+      hasLarnacoeur: defenderAtoutKeys.includes('larnacoeur'),
+      larnState: CombatManager.#getLarnacoeurRoundState(session, 'defender'),
+      otherActor: attackerActor || null
+    };
+
     const view = {
       sessionId: session.sessionId,
       role,
@@ -2674,6 +2909,16 @@ export class CombatManager {
           freePrimes: attackerFreePrimes,
           hasKillBill: attackerHasKillBill,
           killBillAvailable: attackerHasKillBill && attackerDestiny >= 1 && !killBill.armed,
+          hasLarnacoeur: attackerPPContext.hasLarnacoeur,
+          larnacoeurAvailable: attackerPPContext.hasLarnacoeur && attackerDestiny >= 1 && !attackerPPContext.larnState?.attemptedThisRound && !killBillPhaseActive && !session.resolved?.done,
+          larnacoeur: {
+            attemptedThisRound: !!attackerPPContext.larnState?.attemptedThisRound,
+            success: !!attackerPPContext.larnState?.active,
+            freePrimes: Number(attackerPPContext.larnState?.freePrimes || 0),
+            targetName: attackerPPContext.larnState?.effect?.targetName || attackerPPContext.otherActor?.name || '',
+            round: Number(attackerPPContext.larnState?.effect?.round || 0),
+            margin: Number(attackerPPContext.larnState?.effect?.margin || 0)
+          },
           destiny: attackerDestiny
         }
       },
@@ -2709,6 +2954,16 @@ export class CombatManager {
           freePrimes: defenderFreePrimes,
           hasKillBill: defenderHasKillBill,
           killBillAvailable: defenderHasKillBill && defenderDestiny >= 1 && !killBill.armed,
+          hasLarnacoeur: defenderPPContext.hasLarnacoeur,
+          larnacoeurAvailable: defenderPPContext.hasLarnacoeur && defenderDestiny >= 1 && !defenderPPContext.larnState?.attemptedThisRound && !killBillPhaseActive && !session.resolved?.done,
+          larnacoeur: {
+            attemptedThisRound: !!defenderPPContext.larnState?.attemptedThisRound,
+            success: !!defenderPPContext.larnState?.active,
+            freePrimes: Number(defenderPPContext.larnState?.freePrimes || 0),
+            targetName: defenderPPContext.larnState?.effect?.targetName || defenderPPContext.otherActor?.name || '',
+            round: Number(defenderPPContext.larnState?.effect?.round || 0),
+            margin: Number(defenderPPContext.larnState?.effect?.margin || 0)
+          },
           destiny: defenderDestiny
         }
       },
@@ -2724,6 +2979,7 @@ export class CombatManager {
         defense: killBill.defense || null
       },
       pendingRoundAdvance: !!session.pendingRoundAdvance,
+      postRoundKillBillPrompt: !!session.postRoundKillBillPrompt,
       resolved: {
         done: !!session.resolved.done,
         revealed: !!session.resolved.revealed,
@@ -2813,8 +3069,16 @@ export class CombatManager {
 
     const contentEl = CombatManager.#renderDialogShell(dialogId, role);
 
-    // Bouton fantoche requis par DialogV2 — footer masqué, vrais boutons dans .axv-actions
-    const buttons = [{ action: "noop", label: " ", default: false, callback: () => false }];
+    const buttons = (() => {
+      const out = [];
+      if (role === "attacker" || role === "defender") {
+        out.push({ action: "ready", label: "Valider mes cartes", default: !game.user?.isGM, callback: () => false });
+      }
+      if (role === "gm" || game.user?.isGM) {
+        out.push({ action: "end", label: "Terminer le combat", default: role === "gm", callback: () => false });
+      }
+      return out;
+    })();
 
     const dlg = new DialogV2({
       window: { title: `Combat — ${role.toUpperCase()}` },
@@ -2842,8 +3106,6 @@ export class CombatManager {
 
     try {
       const appEl = dlg.element;
-      const footer = appEl?.querySelector?.('footer, .dialog-footer, .window-footer, .dialog-buttons, .form-footer');
-      if (footer) footer.style.display = 'none';
       try {
         const width = Math.min(1220, Math.max(1040, window.innerWidth - 24));
         const height = Math.min(window.innerHeight - 2, Math.min(1080, Math.max(900, window.innerHeight + 40)));
@@ -2951,7 +3213,7 @@ export class CombatManager {
       #${dialogId} .axv-title { font-weight:900; font-size:23px; }
       #${dialogId} .axv-sub { font-size:18px; opacity:.85; margin-top:0; }
       #${dialogId} .axv-row { display:flex; gap:3px; }
-      #${dialogId} .axv-body { flex:1 1 auto; min-height:0; overflow:hidden; }
+      #${dialogId} .axv-body { flex:1 1 auto; min-height:0; overflow:auto; padding-right:2px; }
       #${dialogId} .axv-col { flex:1; border:none; background:transparent; padding:0; }
       #${dialogId} .axv-col h3 { display:none; }
       #${dialogId} .axv-pill { font-size:19px; font-weight:900; padding:2px 8px; border-radius:999px; border:1px solid rgba(255,255,255,.2); background:rgba(0,0,0,.35); white-space:nowrap; }
@@ -2985,20 +3247,24 @@ export class CombatManager {
       #${dialogId} .axv-pp-warn { margin-top:0; font-size:21px; font-weight:900; color:#f8b18a; }
       #${dialogId} .axv-result { padding:3px 5px; border-radius:8px; border:1px solid rgba(255,255,255,.12); background:#000; font-size:18px; }
       #${dialogId} .axv-result strong { font-weight:900; }
-      #${dialogId} .axv-actions { display:flex !important; gap:6px; justify-content:flex-end; align-items:center; margin-top:1px; padding:2px 6px; background:linear-gradient(180deg,rgba(0,0,0,.15),rgba(0,0,0,.5)); border:1px solid rgba(255,255,255,.08); border-radius:10px; flex:0 0 auto; }
       #${dialogId} .axv-btn { appearance:none; border:1px solid rgba(248,142,85,.9); background:linear-gradient(180deg,rgba(248,142,85,.25),rgba(82,26,21,.65)); color:#fff; border-radius:9px; padding:4px 12px; font-weight:900; font-size:19px; cursor:pointer; }
       #${dialogId} .axv-btn.secondary { border-color:rgba(255,255,255,.2); background:rgba(255,255,255,.06); }
       #${dialogId} .axv-btn:disabled { opacity:.45; cursor:not-allowed; }
+      .window-app:has(#${dialogId}) .dialog-buttons,
+      .window-app:has(#${dialogId}) footer.window-footer,
+      .window-app:has(#${dialogId}) .form-footer {
+        display:flex; gap:6px; justify-content:flex-end; align-items:center; margin:1px 0 0 0; padding:4px 8px 8px 8px; background:linear-gradient(180deg,rgba(0,0,0,.15),rgba(0,0,0,.5)); border-top:1px solid rgba(255,255,255,.08); flex:0 0 auto;
+      }
+      .window-app:has(#${dialogId}) .dialog-buttons button,
+      .window-app:has(#${dialogId}) footer.window-footer button,
+      .window-app:has(#${dialogId}) .form-footer button {
+        appearance:none; border:1px solid rgba(248,142,85,.9); background:linear-gradient(180deg,rgba(248,142,85,.25),rgba(82,26,21,.65)); color:#fff; border-radius:9px; padding:4px 12px; font-weight:900; font-size:19px; cursor:pointer; min-height:40px;
+      }
+      .window-app:has(#${dialogId}) .dialog-buttons button:disabled,
+      .window-app:has(#${dialogId}) footer.window-footer button:disabled,
+      .window-app:has(#${dialogId}) .form-footer button:disabled { opacity:.45; cursor:not-allowed; }
     `;
     wrap.appendChild(styleEl);
-
-    // Boutons pré-injectés — visibles dès l'ouverture, sans attendre le state socket
-    let actionsHtml = "";
-    if (role === "attacker" || role === "defender") {
-      actionsHtml = `<button type="button" class="axv-btn axv-action-btn" data-action="ready">Valider mes cartes</button>`;
-    } else if (role === "gm") {
-      actionsHtml = `<button type="button" class="axv-btn secondary axv-action-btn" data-action="end">Terminer le combat</button>`;
-    }
 
     const inner = document.createElement("div");
     inner.id = dialogId;
@@ -3012,7 +3278,6 @@ export class CombatManager {
           <div class="axv-pill">Rôle : ${role.toUpperCase()}</div>
         </div>
         <div class="axv-body"></div>
-        <div class="axv-actions">${actionsHtml}</div>
       </div>
     `;
     wrap.appendChild(inner);
@@ -3137,16 +3402,26 @@ export class CombatManager {
       const killBillButton = (isSelf && side.ppInfo?.hasKillBill)
         ? `<button type="button" class="axv-btn axv-action-btn" data-action="killbill" style="padding:5px 12px;font-size:18px;border-color:${side.ppInfo?.killBillAvailable ? '#ffd08a' : 'rgba(255,255,255,.2)'};background:${side.ppInfo?.killBillAvailable ? 'linear-gradient(180deg,rgba(255,196,92,.42),rgba(125,43,16,.92))' : 'rgba(255,255,255,.06)'};box-shadow:${side.ppInfo?.killBillAvailable ? '0 0 0 2px rgba(255,196,92,.28), 0 0 14px rgba(255,140,64,.28)' : 'none'};${side.ppInfo?.killBillAvailable ? '' : 'opacity:.75;'}" ${side.ppInfo?.killBillAvailable ? '' : 'disabled'} title="${side.ppInfo?.killBillAvailable ? "Cliquer pour déclencher l'attaque supplémentaire de Kill Bill" : "Kill Bill indisponible pour ce tour"}">⚔ Kill Bill (-1 Destin)</button>`
         : "";
+      const larnacoeurButton = (isSelf && side.ppInfo?.hasLarnacoeur)
+        ? `<button type="button" class="axv-btn axv-action-btn" data-action="larnacoeur" style="padding:5px 12px;font-size:18px;border-color:${side.ppInfo?.larnacoeurAvailable ? '#9ec5ff' : 'rgba(255,255,255,.2)'};background:${side.ppInfo?.larnacoeurAvailable ? 'linear-gradient(180deg,rgba(120,172,255,.36),rgba(29,79,145,.92))' : 'rgba(255,255,255,.06)'};box-shadow:${side.ppInfo?.larnacoeurAvailable ? '0 0 0 2px rgba(158,197,255,.25), 0 0 14px rgba(64,128,255,.22)' : 'none'};${side.ppInfo?.larnacoeurAvailable ? '' : 'opacity:.75;'}" ${side.ppInfo?.larnacoeurAvailable ? '' : 'disabled'} title="${side.ppInfo?.larnacoeurAvailable ? "Cliquer pour activer L’arnacoeur pour ce round" : "L’arnacoeur déjà utilisé ou indisponible pour ce round"}">💬 L’arnacoeur (-1 Destin)</button>`
+        : "";
       const remyBanner = side.ppInfo?.hasRemyJulienne
         ? `<div class="axv-remy-banner" style="margin:3px 0 4px 0;padding:4px 8px;border-radius:8px;border:1px solid ${side.ppInfo?.remyActive ? '#fca5a5' : '#d4c6a2'};background:${side.ppInfo?.remyActive ? 'rgba(255,235,235,.90)' : 'rgba(255,248,232,.92)'};color:#111;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">
             <span style="font-size:20px;font-weight:800;line-height:1.15;color:#111;">Atout de personnage — Rémy Julienne disponible</span>
             ${side.ppInfo?.remyActive ? `<span style="padding:2px 7px;border-radius:999px;background:#991b1b;color:#fff;font-weight:800;font-size:10px;white-space:nowrap;">${allowedPrimes} prime(s)</span>` : ''}
           </div>`
         : "";
+      const larnacoeurBanner = side.ppInfo?.hasLarnacoeur && side.ppInfo?.larnacoeur?.attemptedThisRound
+        ? `<div class="axv-larnacoeur-banner" style="margin:3px 0 4px 0;padding:4px 8px;border-radius:8px;border:1px solid rgba(158,197,255,.65);background:rgba(235,244,255,.96);color:#17355f;display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap;">
+            <span style="font-size:20px;font-weight:800;line-height:1.15;color:#17355f;">Atout de personnage — L’arnacoeur ${side.ppInfo?.larnacoeur?.success ? 'activé' : 'raté'}</span>
+            <span style="padding:2px 7px;border-radius:999px;background:#1d4f91;color:#fff;font-weight:800;font-size:10px;white-space:nowrap;">${side.ppInfo?.larnacoeur?.success ? `${Number(side.ppInfo?.larnacoeur?.freePrimes || 0)} prime(s) gratuite(s)` : '0 prime gratuite'}</span>
+          </div>`
+        : "";
       const killBillDefenderNotice = (isSelf && sideKey === 'defender' && (killBillRolePhase === 'waiting-attack' || killBillRolePhase === 'pick-defense' || killBillRolePhase === 'waiting-defense'))
         ? `<div class="axv-kb-defender-notice" style="margin:3px 0 4px 0;padding:5px 8px;border-radius:8px;border:1px solid rgba(255,208,138,.65);background:rgba(255,196,92,.14);color:#ffe7c4;font-size:11px;font-weight:800;line-height:1.2;">${killBillRolePhase === 'waiting-attack' ? "Kill Bill déclenché : l'attaquant prépare une attaque supplémentaire contre toi." : (killBillRolePhase === 'pick-defense' ? "Kill Bill déclenché : choisis maintenant ta carte de défense supplémentaire." : "Kill Bill : ta défense supplémentaire est verrouillée, en attente de résolution.")}</div>`
         : "";
-      const ppWarn = (!side.locked && primesSel.length > 0 && pensSel.length === 0) ? `<div class="axv-pp-warn">Prime sélectionnée : choisis au moins une pénalité.</div>` : "";
+      const freePrimeAllowance = Number(side.ppInfo?.freePrimes || 0);
+      const ppWarn = (!side.locked && primesSel.length > freePrimeAllowance && pensSel.length === 0) ? `<div class="axv-pp-warn">Prime payée sélectionnée : choisis au moins une pénalité.</div>` : "";
       const ppCapWarn = (!side.locked && allowedPrimes >= 0 && primesSel.length > allowedPrimes) ? `<div class="axv-pp-warn">Trop de primes sélectionnées : <strong>${allowedPrimes}</strong> autorisée(s) pour ce tour.</div>` : "";
 
       return `
@@ -3156,11 +3431,13 @@ export class CombatManager {
               <span class="axv-block-name">${CombatManager.#esc(side.name)}</span>
               <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
                 ${remyHeaderBadge}
+                ${larnacoeurButton}
                 ${killBillButton}
                 <span class="axv-pill">${side.ready ? "VALIDÉ ✓" : (side.locked ? "VERROUILLÉ" : "EN COURS")}</span>
               </div>
             </div>
             ${remyBanner}
+            ${larnacoeurBanner}
             ${killBillDefenderNotice}
             ${handHtml}
             <div class="axv-zones">
@@ -3174,8 +3451,8 @@ export class CombatManager {
               </div>
             </div>
             <div class="axv-pp">
-              <div class="axv-pp-box"><div class="axv-zone-title"><span>Primes</span><span class="axv-mini">(coche)</span></div>${primesHtml}</div>
-              <div class="axv-pp-box"><div class="axv-zone-title"><span>Pénalités</span><span class="axv-mini">(si prime)</span></div>${pensHtml}${ppWarn}${ppCapWarn}</div>
+              <div class="axv-pp-box"><div class="axv-zone-title"><span>Primes</span><span class="axv-mini">${freePrimeAllowance > 0 ? `(gratuites possibles : ${freePrimeAllowance})` : `(coche)`}</span></div>${primesHtml}</div>
+              <div class="axv-pp-box"><div class="axv-zone-title"><span>Pénalités</span><span class="axv-mini">(si prime payée)</span></div>${pensHtml}${ppWarn}${ppCapWarn}</div>
             </div>
           </div>
         </div>`;
@@ -3184,18 +3461,16 @@ export class CombatManager {
     let resultHtml = "";
 
     const side = role === "attacker" ? view.attacker : (role === "defender" ? view.defender : null);
-    // Mettre à jour les boutons déjà présents dans .axv-actions (pré-injectés au shell)
-    const actionsDiv = root.querySelector(".axv-actions");
-    if (actionsDiv) {
-      const readyBtn = actionsDiv.querySelector('[data-action="ready"]');
+    // Mettre à jour les boutons natifs DialogV2 dans le footer Foundry
+    const appEl = root.closest?.('.window-app, .application, form') || root.parentElement;
+    const footer = appEl?.querySelector?.('.dialog-buttons, footer.window-footer, .form-footer');
+    if (footer) {
+      const readyBtn = footer.querySelector('[data-action="ready"], [data-button="ready"]');
       if (readyBtn && side) {
         const killBillRolePhase = role === 'attacker' ? view.killBill?.attackerPhase : (role === 'defender' ? view.killBill?.defenderPhase : null);
         let disabled = !!side.locked;
         let label = side.locked ? "Cartes validées ✓" : "Valider mes cartes";
-        if (view.resolved?.done && view.pendingRoundAdvance && !view.killBill?.armed) {
-          label = "Passer au round suivant";
-          disabled = false;
-        } else if (killBillRolePhase === 'pick-attack') {
+        if (killBillRolePhase === 'pick-attack') {
           label = "Valider l'attaque Kill Bill";
           disabled = !!side.locked;
         } else if (killBillRolePhase === 'waiting-attack') {
@@ -3211,8 +3486,11 @@ export class CombatManager {
         readyBtn.disabled = disabled;
         readyBtn.textContent = label;
       }
-      if (game.user?.isGM && !actionsDiv.querySelector('[data-action="end"]')) {
-        const endBtn = document.createElement("button"); endBtn.type = "button"; endBtn.className = "axv-btn secondary axv-action-btn"; endBtn.dataset.action = "end"; endBtn.textContent = "Terminer le combat"; actionsDiv.appendChild(endBtn);
+      const endBtn = footer.querySelector('[data-action="end"], [data-button="end"]');
+      if (endBtn && game.user?.isGM) {
+        endBtn.disabled = false;
+        endBtn.style.display = '';
+        endBtn.textContent = "Terminer le combat";
       }
     }
 
@@ -3527,6 +3805,15 @@ if (!allowedSide || sideKey !== allowedSide) return;
           role
         });
       }
+      if (action === "larnacoeur") {
+        await CombatManager.#emit({
+          type: "axvCombat:larnacoeur",
+          toUserId: CombatManager.#activeGMId(),
+          fromUserId: game.user.id,
+          sessionId,
+          role
+        });
+      }
       if (action === "end") {
         console.log("[ARCANE XV][COMBAT][UI] end clicked", { sessionId, role });
         await CombatManager.#emit({
@@ -3546,9 +3833,51 @@ if (!allowedSide || sideKey !== allowedSide) return;
       await runAction(btn.dataset.action);
     });
 
+    const ensureNativeFooterButtons = () => {
+      const appEl = dlg.element;
+      if (!appEl) return null;
+      let footer = appEl.querySelector?.(".dialog-buttons, footer.window-footer, .form-footer");
+      if (!footer) {
+        const windowContent = appEl.querySelector?.('.window-content') || appEl;
+        footer = document.createElement('nav');
+        footer.className = 'dialog-buttons';
+        footer.style.display = 'flex';
+        footer.style.gap = '6px';
+        footer.style.justifyContent = 'flex-end';
+        footer.style.alignItems = 'center';
+        footer.style.margin = '1px 0 0 0';
+        footer.style.padding = '4px 8px 8px 8px';
+        footer.style.background = 'linear-gradient(180deg,rgba(0,0,0,.15),rgba(0,0,0,.5))';
+        footer.style.borderTop = '1px solid rgba(255,255,255,.08)';
+        footer.style.flex = '0 0 auto';
+        windowContent.appendChild(footer);
+      }
+      const ensureButton = (action, label, isDefault = false) => {
+        let btn = footer.querySelector(`[data-action="${action}"], [data-button="${action}"]`);
+        if (btn) return btn;
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.action = action;
+        btn.dataset.button = action;
+        btn.textContent = label;
+        if (isDefault) btn.classList.add('default');
+        footer.appendChild(btn);
+        return btn;
+      };
+      if (role === 'attacker' || role === 'defender') {
+        ensureButton('ready', 'Valider mes cartes', !game.user?.isGM);
+      }
+      if (role === 'gm' || game.user?.isGM) {
+        ensureButton('end', 'Terminer le combat', role === 'gm');
+      }
+      return footer;
+    };
+
     const hookButtons = () => {
-      const footer = dlg.element?.querySelector?.(".dialog-buttons, footer.window-footer, .form-footer");
+      const footer = ensureNativeFooterButtons();
       if (!footer) return;
+      if (footer.dataset.axvBound === '1') return;
+      footer.dataset.axvBound = '1';
       footer.addEventListener("click", async (ev) => {
         const btn = ev.target?.closest?.("button");
         if (!btn) return;
@@ -3558,6 +3887,7 @@ if (!allowedSide || sideKey !== allowedSide) return;
       }, true);
     };
 
+    ensureNativeFooterButtons();
     hookButtons();
   }
 
@@ -3580,6 +3910,13 @@ if (!allowedSide || sideKey !== allowedSide) return;
       }
       for (const actor of [attackerWorldActor, defenderWorldActor, attackerTokenActor, defenderTokenActor, ...extraActors]) {
         try { await actor?.unsetFlag?.("arcane15", "lastInitiativeCombat"); } catch (_) {}
+        try {
+          const runtime = foundry.utils.deepClone(actor?.getFlag?.('arcane15', 'arcanaRuntime') || {});
+          if (runtime?.larnacoeurCombat?.sessionId && String(runtime.larnacoeurCombat.sessionId) === String(sessionId)) {
+            delete runtime.larnacoeurCombat;
+            await actor?.setFlag?.('arcane15', 'arcanaRuntime', runtime);
+          }
+        } catch (_) {}
       }
     } catch (e) {
       console.warn("[ARCANE XV][COMBAT][GM] clear lastInitiativeCombat failed", e);

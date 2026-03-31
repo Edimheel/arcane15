@@ -117,16 +117,15 @@ export class CardManager {
 
             console.log("[ARCANE XV][GMOP] executing cycle as GM", { actor: actor.name, cardId });
 
-            const cycleData = await CardManager.cycleCard(actor, card, { forceAsGM: true });
+            await CardManager.cycleCard(actor, card, { forceAsGM: true });
 
-            console.log("[ARCANE XV][GMOP] cycle done ok", { opId, cycleData });
+            console.log("[ARCANE XV][GMOP] cycle done ok", { opId });
 
             game.socket.emit(CardManager.SOCKET_CHANNEL, {
               type: "gmOpResult",
               opId,
               toUserId: payload.fromUserId,
-              ok: true,
-              data: cycleData ?? null
+              ok: true
             });
           } catch (e) {
             console.error("[ARCANE XV][GMOP] gmCycleCard ERROR", e);
@@ -151,20 +150,15 @@ export class CardManager {
             const actor = game.actors.get(actorId);
             if (!actor) throw new Error(`Actor introuvable: ${actorId}`);
 
-            const swapData = await CardManager.swapSubstitutionCards(actor, {
-              originalCardId,
-              replacementCardId,
-              forceAsGM: true
-            });
+            await CardManager.swapSubstitutionCards(actor, originalCardId, replacementCardId, { forceAsGM: true });
 
-            console.log("[ARCANE XV][GMOP] swap substitution done ok", { opId, swapData });
+            console.log("[ARCANE XV][GMOP] substitution swap done ok", { opId });
 
             game.socket.emit(CardManager.SOCKET_CHANNEL, {
               type: "gmOpResult",
               opId,
               toUserId: payload.fromUserId,
-              ok: true,
-              data: swapData ?? null
+              ok: true
             });
           } catch (e) {
             console.error("[ARCANE XV][GMOP] gmSwapSubstitutionCards ERROR", e);
@@ -191,7 +185,7 @@ export class CardManager {
           }
 
           CardManager.#pendingGmOps.delete(payload.opId);
-          pending.resolve({ ok: !!payload.ok, error: payload.error ?? "", data: payload.data ?? null });
+          pending.resolve({ ok: !!payload.ok, error: payload.error ?? "" });
           return;
         }
       } catch (e) {
@@ -691,10 +685,10 @@ export class CardManager {
       ui.notifications.error(`Cycle GM refusé/échoué: ${res.error || "erreur"}`);
       throw new Error(res.error || "GM cycle failed");
     }
-    return res.data ?? true;
+    return true;
   }
 
-  static async _requestGmSwapSubstitutionCards(actor, { originalCardId, replacementCardId } = {}) {
+  static async _requestGmSwapSubstitution(actor, originalCardId, replacementCardId) {
     CardManager.ensureSocket();
 
     const activeGM = CardManager._getActiveGM();
@@ -704,12 +698,7 @@ export class CardManager {
     }
 
     const opId = foundry.utils.randomID();
-    console.log("[ARCANE XV][GMOP][PLAYER] request gmSwapSubstitutionCards", {
-      opId,
-      actorId: actor.id,
-      originalCardId,
-      replacementCardId
-    });
+    console.log("[ARCANE XV][GMOP][PLAYER] request gmSwapSubstitutionCards", { opId, actorId: actor.id, originalCardId, replacementCardId });
 
     const p = new Promise((resolve) => CardManager.#pendingGmOps.set(opId, { resolve, createdAt: Date.now() }));
 
@@ -733,9 +722,9 @@ export class CardManager {
     const res = await p;
     if (!res.ok) {
       ui.notifications.error(`Échange GM refusé/échoué: ${res.error || "erreur"}`);
-      throw new Error(res.error || "GM swap failed");
+      throw new Error(res.error || "GM substitution swap failed");
     }
-    return res.data ?? true;
+    return true;
   }
 
   // --------------------------
@@ -743,8 +732,8 @@ export class CardManager {
   // --------------------------
   static async cycleCard(actor, card, { forceAsGM = false } = {}) {
     try {
-      if (!card) return null;
-      if (CardManager._isJoker(card)) return null;
+      if (!card) return;
+      if (CardManager._isJoker(card)) return;
 
       // IMPORTANT: si joueur (non-GM), on fait exécuter le cycle par le MJ directement
       // pour éviter les moves partiels (create OK / delete refusé) qui créent des doublons _id.
@@ -762,12 +751,6 @@ export class CardManager {
       const pile = game.cards.get(actor.getFlag("arcane15", "pile"));
 
       if (!deck || !hand || !pile) throw new Error("deck/hand/pile introuvables");
-
-      const beforeHandIds = new Set(
-        hand.cards.contents
-          .filter(c => !CardManager._isJoker(c))
-          .map(c => c.id)
-      );
 
       console.log("[ARCANE XV][CYCLE] start", {
         actor: actor.name,
@@ -797,27 +780,9 @@ export class CardManager {
       // Cela couvre aussi l'initiative et le combat si la main était déjà dégradée
       // ou si la défausse doit être recyclée avant de repiocher.
       await CardManager._normalizeHandSize({ actor, deck, hand, pile });
-      const afterHandCards = hand.cards.contents.filter(c => !CardManager._isJoker(c));
-      const drawnCard = afterHandCards.find(c => !beforeHandIds.has(c.id)) ?? null;
-
       await CardManager._offerMonteCristo(actor, deck, hand, pile);
 
-      const result = {
-        originalCardId: card.id,
-        drawnCardId: drawnCard?.id ?? null,
-        drawnCardValue: Number(drawnCard?.flags?.arcane15?.value ?? 0),
-        drawnCardName: drawnCard ? CardManager._getCardName(drawnCard) : "",
-        drawnCardImg: drawnCard ? (CardManager._getCardImg(drawnCard) || "icons/svg/hazard.svg") : ""
-      };
-
-      console.log("[ARCANE XV][CYCLE] done", {
-        actor: actor.name,
-        handCount: hand.cards.size,
-        deckCount: deck.cards.size,
-        pileCount: pile.cards.size,
-        result
-      });
-      return result;
+      console.log("[ARCANE XV][CYCLE] done", { actor: actor.name, handCount: hand.cards.size, deckCount: deck.cards.size, pileCount: pile.cards.size });
     } catch (e) {
       console.error("[ARCANE XV][CYCLE][ERROR] exception", e);
       ui.notifications.error("Erreur cycle carte (voir console).");
@@ -825,55 +790,68 @@ export class CardManager {
     }
   }
 
-  static async swapSubstitutionCards(actor, { originalCardId, replacementCardId, forceAsGM = false } = {}) {
+  static async swapSubstitutionCards(actor, originalCardId, replacementCardId, { forceAsGM = false } = {}) {
     try {
-      if (!actor || !originalCardId || !replacementCardId) {
-        throw new Error("Paramètres d’échange invalides.");
-      }
+      if (!actor || !originalCardId || !replacementCardId) throw new Error("Paramètres de substitution invalides.");
 
       if (!game.user?.isGM && !forceAsGM) {
-        console.warn("[ARCANE XV][SWAP] player swap -> delegate to GM", {
+        console.warn("[ARCANE XV][SUBSTITUTION] player swap -> delegate to GM", {
           actor: actor.name,
           originalCardId,
           replacementCardId,
           user: game.user?.name
         });
-        return await CardManager._requestGmSwapSubstitutionCards(actor, { originalCardId, replacementCardId });
+        return await CardManager._requestGmSwapSubstitution(actor, originalCardId, replacementCardId);
       }
 
       const hand = game.cards.get(actor.getFlag("arcane15", "hand"));
       const pile = game.cards.get(actor.getFlag("arcane15", "pile"));
-      if (!hand || !pile) throw new Error("Main/défausse introuvables");
+      if (!hand || !pile) throw new Error("Main/défausse introuvables.");
 
-      const originalInPile = pile.cards.get(originalCardId);
-      const replacementInHand = hand.cards.get(replacementCardId);
+      const originalInHand = hand.cards.get(originalCardId) ?? null;
+      const replacementInHand = hand.cards.get(replacementCardId) ?? null;
+      const originalInPile = pile.cards.get(originalCardId) ?? null;
+      const replacementInPile = pile.cards.get(replacementCardId) ?? null;
 
-      if (!originalInPile) throw new Error("Carte initiale introuvable dans la défausse.");
-      if (!replacementInHand) throw new Error("Carte repiochée introuvable dans la main.");
-
-      console.log("[ARCANE XV][SWAP] start", {
+      console.log("[ARCANE XV][SUBSTITUTION] swap start", {
         actor: actor.name,
         originalCardId,
         replacementCardId,
-        forceAsGM,
-        isGM: game.user?.isGM
+        originalInHand: !!originalInHand,
+        originalInPile: !!originalInPile,
+        replacementInHand: !!replacementInHand,
+        replacementInPile: !!replacementInPile,
+        isGM: game.user?.isGM,
+        forceAsGM
       });
 
+      if (originalInHand && replacementInPile) {
+        console.log("[ARCANE XV][SUBSTITUTION] swap already applied", { actor: actor.name, originalCardId, replacementCardId });
+        return true;
+      }
+      if (!originalInPile) throw new Error("Carte initiale introuvable dans la défausse.");
+      if (!replacementInHand) throw new Error("Carte repiochée introuvable dans la main.");
+
       await hand.pass(pile, [replacementInHand.id], { chatNotification: false });
-      await pile.pass(hand, [originalInPile.id], { chatNotification: false });
+      try {
+        await pile.pass(hand, [originalInPile.id], { chatNotification: false });
+      } catch (e) {
+        const replacementNowInPile = pile.cards.get(replacementCardId) ?? null;
+        if (replacementNowInPile) {
+          try {
+            await pile.pass(hand, [replacementNowInPile.id], { chatNotification: false });
+          } catch (rollbackError) {
+            console.error("[ARCANE XV][SUBSTITUTION] rollback failed", rollbackError);
+          }
+        }
+        throw e;
+      }
 
-      const result = {
-        originalCardId,
-        replacementCardId,
-        originalReturnedToHand: true,
-        replacementMovedToPile: true
-      };
-
-      console.log("[ARCANE XV][SWAP] done", { actor: actor.name, result });
-      return result;
+      console.log("[ARCANE XV][SUBSTITUTION] swap done", { actor: actor.name, handCount: hand.cards.size, pileCount: pile.cards.size });
+      return true;
     } catch (e) {
-      console.error("[ARCANE XV][SWAP][ERROR] exception", e);
-      ui.notifications.error("Erreur échange substitution (voir console).");
+      console.error("[ARCANE XV][SUBSTITUTION][ERROR]", e);
+      ui.notifications.error(String(e?.message || e || "Erreur lors de la substitution."));
       throw e;
     }
   }
@@ -1189,14 +1167,21 @@ export class CardManager {
         const difficulty = Number(diff?.difficulty ?? 0);
         const success = finalTotal >= difficulty;
         const verdict = success ? "RÉUSSITE" : "ÉCHEC";
-        const rollId = foundry.utils.randomID();
         const actionButtons = ArcanaManager?.getRollActionButtons
-          ? ArcanaManager.getRollActionButtons(actor, skillKey, { skillName, difficulty, skillTotal: skillValue, cardValue, finalTotal, rollId })
+          ? ArcanaManager.getRollActionButtons(actor, skillKey, {
+              skillName,
+              difficulty,
+              skillTotal: skillValue,
+              cardValue,
+              finalTotal,
+              originalCardId: card.id,
+              handSnapshot: hand.cards.contents.filter(c => !CardManager._isJoker(c)).map(c => c.id)
+            })
           : "";
 
-        console.log("[ARCANE XV][ROLL] difficulty resolved", { difficulty, verdict, finalTotal, rollId });
+        console.log("[ARCANE XV][ROLL] difficulty resolved", { difficulty, verdict, finalTotal });
 
-        const chatMessage = await ChatMessage.create({
+        await ChatMessage.create({
           content: `
   <div class="axv-chat-card" style="width:100%; max-width:100%; box-sizing:border-box; border:1px solid rgba(0,0,0,.2); border-radius:14px; overflow:hidden; background:#fff;">
     <div style="padding:10px 12px; border-bottom:1px solid rgba(0,0,0,.12); font-weight:900; box-sizing:border-box;">
@@ -1220,35 +1205,6 @@ export class CardManager {
           speaker: ChatMessage.getSpeaker({ actor })
         });
 
-        let cycleData = null;
-        if (!isJoker) {
-          console.log("[ARCANE XV][ROLL] cycling card after chat", { cardId: card.id, rollId });
-          cycleData = await CardManager.cycleCard(actor, card);
-        }
-
-        if (chatMessage) {
-          try {
-            await chatMessage.setFlag("arcane15", "skillRollContext", {
-              rollId,
-              actorId: actor.id,
-              skillKey,
-              skillName,
-              difficulty,
-              success,
-              timestamp: Date.now(),
-              finalTotal,
-              skillTotal: skillValue,
-              cardValue,
-              source: "normal",
-              originalCardId: card.id,
-              originalIsJoker: isJoker,
-              cycleData: cycleData ?? null
-            });
-          } catch (messageFlagError) {
-            console.warn("[ARCANE XV][ROLL] unable to store skillRollContext on chat message", messageFlagError);
-          }
-        }
-
         try {
           await actor.setFlag("arcane15", "lastSkillTest", {
             skillKey,
@@ -1259,11 +1215,7 @@ export class CardManager {
             finalTotal,
             skillTotal: skillValue,
             cardValue,
-            source: "normal",
-            rollId,
-            originalCardId: card.id,
-            originalIsJoker: isJoker,
-            cycleData: cycleData ?? null
+            source: "normal"
           });
         } catch (flagError) {
           console.warn("[ARCANE XV][ROLL] unable to store lastSkillTest", flagError);
@@ -1271,6 +1223,11 @@ export class CardManager {
 
         if (arcanaMods?.consume?.length && ArcanaManager?.consumeSkillModifiers) {
           await ArcanaManager.consumeSkillModifiers(actor, arcanaMods.consume);
+        }
+
+        if (!isJoker) {
+          console.log("[ARCANE XV][ROLL] cycling card after chat", { cardId: card.id });
+          await CardManager.cycleCard(actor, card);
         }
 
         await dlg.close();
