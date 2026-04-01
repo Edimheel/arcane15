@@ -173,6 +173,40 @@ export class CardManager {
           return;
         }
 
+        if (payload.type === "gmTemporaryDrawCard") {
+          if (!game.user?.isGM) return;
+
+          const { opId, actorId, label } = payload;
+          console.log("[ARCANE XV][GMOP][RECV] gmTemporaryDrawCard", { opId, actorId, label });
+
+          try {
+            const actor = game.actors.get(actorId);
+            if (!actor) throw new Error(`Actor introuvable: ${actorId}`);
+
+            const result = await CardManager.temporaryDrawCard(actor, label, { forceAsGM: true });
+
+            console.log("[ARCANE XV][GMOP] temporary draw done ok", { opId, actor: actor.name, result });
+
+            game.socket.emit(CardManager.SOCKET_CHANNEL, {
+              type: "gmOpResult",
+              opId,
+              toUserId: payload.fromUserId,
+              ok: true,
+              result
+            });
+          } catch (e) {
+            console.error("[ARCANE XV][GMOP] gmTemporaryDrawCard ERROR", e);
+            game.socket.emit(CardManager.SOCKET_CHANNEL, {
+              type: "gmOpResult",
+              opId,
+              toUserId: payload.fromUserId,
+              ok: false,
+              error: String(e?.message ?? e)
+            });
+          }
+          return;
+        }
+
         if (payload.type === "gmOpResult") {
           if (payload?.toUserId !== game.user?.id) return;
 
@@ -185,7 +219,7 @@ export class CardManager {
           }
 
           CardManager.#pendingGmOps.delete(payload.opId);
-          pending.resolve({ ok: !!payload.ok, error: payload.error ?? "" });
+          pending.resolve({ ok: !!payload.ok, error: payload.error ?? "", result: payload.result ?? null });
           return;
         }
       } catch (e) {
@@ -727,6 +761,44 @@ export class CardManager {
     return true;
   }
 
+  static async _requestGmTemporaryDraw(actor, label = "Pioche d’arcane") {
+    CardManager.ensureSocket();
+
+    const activeGM = CardManager._getActiveGM();
+    if (!activeGM || !game.socket) {
+      ui.notifications.error("Permissions cartes: MJ indisponible. (Active GM absent)");
+      throw new Error("Active GM absent");
+    }
+
+    const opId = foundry.utils.randomID();
+    console.log("[ARCANE XV][GMOP][PLAYER] request gmTemporaryDrawCard", { opId, actorId: actor.id, label });
+
+    const p = new Promise((resolve) => CardManager.#pendingGmOps.set(opId, { resolve, createdAt: Date.now() }));
+
+    game.socket.emit(CardManager.SOCKET_CHANNEL, {
+      type: "gmTemporaryDrawCard",
+      opId,
+      fromUserId: game.user.id,
+      actorId: actor.id,
+      label
+    });
+
+    setTimeout(() => {
+      const pending = CardManager.#pendingGmOps.get(opId);
+      if (pending) {
+        CardManager.#pendingGmOps.delete(opId);
+        pending.resolve({ ok: false, error: "Timeout GM op", result: null });
+      }
+    }, 15_000);
+
+    const res = await p;
+    if (!res.ok) {
+      ui.notifications.error(`Pioche GM refusée/échouée: ${res.error || "erreur"}`);
+      throw new Error(res.error || "GM temporary draw failed");
+    }
+    return res.result ?? null;
+  }
+
   // --------------------------
   // Cycle: main -> défausse, pioche 1, recycle
   // --------------------------
@@ -786,6 +858,59 @@ export class CardManager {
     } catch (e) {
       console.error("[ARCANE XV][CYCLE][ERROR] exception", e);
       ui.notifications.error("Erreur cycle carte (voir console).");
+      throw e;
+    }
+  }
+
+  static async temporaryDrawCard(actor, label = "Pioche d’arcane", { forceAsGM = false } = {}) {
+    try {
+      if (!actor) return null;
+
+      if (!game.user?.isGM && !forceAsGM) {
+        console.warn("[ARCANE XV][TEMPDRAW] player draw -> delegate to GM", { actor: actor.name, label, user: game.user?.name });
+        return await CardManager._requestGmTemporaryDraw(actor, label);
+      }
+
+      let deck = game.cards.get(actor.getFlag("arcane15", "deck"));
+      let hand = game.cards.get(actor.getFlag("arcane15", "hand"));
+      let pile = game.cards.get(actor.getFlag("arcane15", "pile"));
+
+      if (!deck || !hand || !pile) {
+        await CardManager.initActorDecks(actor);
+        deck = game.cards.get(actor.getFlag("arcane15", "deck"));
+        hand = game.cards.get(actor.getFlag("arcane15", "hand"));
+        pile = game.cards.get(actor.getFlag("arcane15", "pile"));
+      }
+
+      if (!deck || !hand || !pile) return null;
+
+      const available = Array.isArray(deck.availableCards) ? deck.availableCards.length : deck.cards.contents.filter(c => !c.drawn).length;
+      if (available < 1) {
+        const pileIds = pile.cards.contents.filter(c => !CardManager._isJoker(c)).map(c => c.id);
+        if (pileIds.length) {
+          await pile.pass(deck, pileIds, { chatNotification: false, updateData: { drawn: false } });
+          await deck.shuffle();
+        }
+      }
+
+      const before = new Set(hand.cards.contents.map(c => c.id));
+      await deck.deal([hand], 1, { chatNotification: false });
+      const drawn = hand.cards.contents.find(c => !before.has(c.id) && !CardManager._isJoker(c)) || null;
+      if (!drawn) return null;
+
+      const info = {
+        id: drawn.id,
+        value: Number(drawn.flags?.arcane15?.value ?? 0),
+        name: CardManager._getCardName(drawn),
+        img: CardManager._getCardImg(drawn) || drawn.img || "icons/svg/hazard.svg",
+        label
+      };
+
+      await hand.pass(pile, [drawn.id], { chatNotification: false });
+      await CardManager._normalizeHandSize({ actor, deck, hand, pile });
+      return info;
+    } catch (e) {
+      console.error("[ARCANE XV][TEMPDRAW][ERROR]", e);
       throw e;
     }
   }

@@ -1877,7 +1877,9 @@ export class ArcanaManager {
         actions.style.marginTop = '10px';
         card.appendChild(actions);
       }
-      actions.innerHTML = `<button type="button" class="axv-arcana-btn axv-personal-atout-current" data-atout-key="${def.key}">Effet courant</button><button type="button" class="axv-arcana-btn axv-personal-atout-heroic" data-atout-key="${def.key}">Effet héroïque (-1 Destin)</button>`;
+      actions.innerHTML = def.key === 'boite-de-chocolats'
+        ? `<button type="button" class="axv-arcana-btn axv-personal-atout-heroic" data-atout-key="${def.key}">Effet héroïque (-1 Destin)</button>`
+        : `<button type="button" class="axv-arcana-btn axv-personal-atout-current" data-atout-key="${def.key}">Effet courant</button><button type="button" class="axv-arcana-btn axv-personal-atout-heroic" data-atout-key="${def.key}">Effet héroïque (-1 Destin)</button>`;
     });
 
     root.querySelectorAll('.axv-personal-atout-current').forEach(btn => {
@@ -2271,6 +2273,56 @@ export class ArcanaManager {
       ?? { actor: writableActor ?? primaryActor ?? null, state: ArcanaManager.#getDestinyState(writableActor ?? primaryActor ?? null) };
   }
 
+  static async handleBoiteDeChocolatsRecovery(actor, { success = false } = {}) {
+    const writableActor = ArcanaManager.#getWritableActor(actor) ?? actor ?? null;
+    if (!writableActor) return;
+
+    const pendingRecovery = writableActor.getFlag?.('arcane15', 'pendingDestinyRecovery');
+    if (!pendingRecovery) return;
+
+    await writableActor.unsetFlag('arcane15', 'pendingDestinyRecovery');
+
+    if (success) return;
+    if (!ArcanaManager.getCharacterAtouts(writableActor).some(a => a.key === 'boite-de-chocolats')) return;
+
+    const recoveryDraw = await ArcanaManager.#drawTemporaryCard(writableActor, 'La vie, c’est comme une boîte de chocolats — récupération de Destin');
+    const recoveryValue = Number(recoveryDraw?.value || 0);
+
+    let recovered = false;
+    if (recoveryValue >= 7) {
+      const holder = ArcanaManager.#pickDestinyHolder(writableActor, writableActor, 0);
+      const state = ArcanaManager.#getDestinyState(holder?.actor ?? writableActor);
+      await (holder?.actor ?? writableActor).update({ [state.path]: Number(state.value || 0) + 1 });
+      recovered = true;
+    }
+
+    const body = `
+      <div style="display:flex; align-items:center; gap:12px;">
+        <img
+          src="${recoveryDraw?.img || 'icons/svg/hazard.svg'}"
+          alt="${recoveryDraw?.name || 'Carte'}"
+          style="width:72px; height:auto; border-radius:6px; box-shadow:0 0 0 1px rgba(0,0,0,.25);"
+        />
+        <div>
+          <div><strong>Carte piochée :</strong> ${recoveryDraw?.name || 'Carte'}</div>
+          <div><strong>Valeur :</strong> ${recoveryValue}</div>
+          <div style="margin-top:4px;"><strong>${recovered ? 'Récupération :' : 'Résultat :'}</strong> ${recovered ? '+1 point de Destin récupéré.' : 'pas de récupération de Destin.'}</div>
+        </div>
+      </div>
+    `;
+
+    await ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ actor: writableActor }),
+      content: renderPersonalAtoutChatCard({
+        title: 'La vie, c’est comme une boîte de chocolats',
+        mode: 'Déclenchement',
+        actorName: writableActor.name,
+        body,
+        accent: '#3d5875'
+      })
+    });
+  }
+
   static async requestActivation(actor, itemId) {
     const writableActor = ArcanaManager.#getWritableActor(actor) ?? actor;
     const item = ArcanaManager.#getWritableItem(actor, itemId);
@@ -2637,7 +2689,6 @@ export class ArcanaManager {
         break;
       }
      case 'actor-studio': {
-  await writableActor.setFlag('arcane15', 'pendingDestinyRecovery', { source: atout.key, at: Date.now() });
   const draw = await ArcanaManager.#drawTemporaryCard(writableActor, `${atout.name} — bonus Connaissance`);
   if (!draw) return;
 
@@ -2670,19 +2721,63 @@ export class ArcanaManager {
   break;
 }
       case 'boite-de-chocolats': {
-        const actors = (game.actors?.contents ?? []).filter(a => a.type === 'personnage' && a.hasPlayerOwner && !(a.system?.stats?.malEnPoint || a.getFlag?.('arcane15', 'malEnPoint')));
+        const actors = (game.actors?.contents ?? []).filter(a => {
+          if (!a) return false;
+          if (a.id === writableActor.id) return false;
+          if (a.type !== 'personnage') return false;
+          if (!a.hasPlayerOwner) return false;
+          if (a.system?.stats?.malEnPoint || a.getFlag?.('arcane15', 'malEnPoint')) return false;
+
+          const currentVit = Number(a.system?.stats?.vitalite ?? 0);
+          const maxVit = Number(a.system?.stats?.vitaliteMax ?? 0);
+          if (maxVit > 0 && currentVit >= maxVit) return false;
+
+          return true;
+        });
+
         const parts = [];
         for (const ally of actors) {
           const draw = await ArcanaManager.#drawTemporaryCard(ally, `${atout.name} — soin`);
+          if (!draw) continue;
+
           const gain = Number(draw?.value || 0);
           let healed = 0;
           if (gain > 0) {
             const healResult = await game.arcane15?.combat?.applyVitalityHealing?.(ally, gain, { sourceLabel: atout.name });
             healed = Number(healResult?.healed ?? gain);
           }
-          parts.push(`${ally.name} +${healed}`);
+
+          parts.push(`
+            <div style="display:flex; align-items:center; gap:12px; margin:8px 0;">
+              <img
+                src="${draw?.img || 'icons/svg/hazard.svg'}"
+                alt="${draw?.name || 'Carte'}"
+                style="width:72px; height:auto; border-radius:6px; box-shadow:0 0 0 1px rgba(0,0,0,.25);"
+              />
+              <div>
+                <div><strong>${ally.name}</strong></div>
+                <div><strong>Carte piochée :</strong> ${draw?.name || 'Carte'}</div>
+                <div><strong>Valeur :</strong> +${gain}</div>
+                <div><strong>Vitalité récupérée :</strong> +${healed}</div>
+              </div>
+            </div>
+          `);
         }
-        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body: parts.join(' • '), accent: '#8b1e18' }) });
+
+        if (!parts.length) {
+          parts.push(`<div>Aucun compagnon valide : les autres PJ joueurs sont absents, mal en point, ou déjà à leur Vitalité maximale.</div>`);
+        }
+
+        await ChatMessage.create({
+          speaker: ChatMessage.getSpeaker({ actor: writableActor }),
+          content: renderPersonalAtoutChatCard({
+            title: atout.name,
+            mode: 'Effet héroïque',
+            actorName: writableActor.name,
+            body: parts.join(''),
+            accent: '#3d5875'
+          })
+        });
         break;
       }
       case 'keyser-soze':
@@ -2691,7 +2786,6 @@ export class ArcanaManager {
         await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body: `Les ennemis ne prennent plus ${writableActor.name} pour cible, sauf exception prévue par la règle.`, accent: '#8b1e18' }) });
         break;
       case 'monte-cristo': {
-        await writableActor.setFlag('arcane15', 'pendingDestinyRecovery', { source: atout.key, at: Date.now() });
         const draw = await ArcanaManager.#drawTemporaryCard(writableActor, `${atout.name} — bonus Volonté`);
         if (!draw) return;
         runtime.pendingVolonteBonus = { value: Number(draw.value || 0), label: atout.name };
@@ -2836,9 +2930,6 @@ export class ArcanaManager {
     if (!spendResult?.ok) {
       if (spendError) console.error("[ARCANE XV][ARCANA] unable to spend destiny", spendError);
       return ui.notifications?.warn?.("Pas assez de points de Destin.");
-    }
-    if (ArcanaManager.getCharacterAtouts(writableActor).some(a => a.key === 'boite-de-chocolats')) {
-      try { await writableActor.setFlag('arcane15', 'pendingDestinyRecovery', { source: item.system?.arcaneId || item.id, at: Date.now() }); } catch (_) {}
     }
     await item.update({ "system.lastHeroicAt": Date.now() });
     const refreshedActor = game.actors.get(writableActor.id) ?? writableActor;
@@ -3149,39 +3240,7 @@ export class ArcanaManager {
 
   static async #drawTemporaryCard(actor, label = "Pioche d’arcane") {
     const writableActor = ArcanaManager.#getWritableActor(actor) ?? actor;
-    let deck = game.cards.get(writableActor.getFlag("arcane15", "deck"));
-    let hand = game.cards.get(writableActor.getFlag("arcane15", "hand"));
-    let pile = game.cards.get(writableActor.getFlag("arcane15", "pile"));
-    if (!deck || !hand || !pile) {
-      await CardManager.initActorDecks(writableActor);
-      deck = game.cards.get(writableActor.getFlag("arcane15", "deck"));
-      hand = game.cards.get(writableActor.getFlag("arcane15", "hand"));
-      pile = game.cards.get(writableActor.getFlag("arcane15", "pile"));
-    }
-    if (!deck || !hand || !pile) return null;
-
-    const available = Array.isArray(deck.availableCards) ? deck.availableCards.length : deck.cards.contents.filter(c => !c.drawn).length;
-    if (available < 1) {
-      const pileIds = pile.cards.contents.filter(c => !CardManager._isJoker(c)).map(c => c.id);
-      if (pileIds.length) {
-        await pile.pass(deck, pileIds, { chatNotification: false, updateData: { drawn: false } });
-        await deck.shuffle();
-      }
-    }
-    const before = new Set(hand.cards.contents.map(c => c.id));
-    await deck.deal([hand], 1, { chatNotification: false });
-    const drawn = hand.cards.contents.find(c => !before.has(c.id) && !CardManager._isJoker(c)) || null;
-    if (!drawn) return null;
-    const info = {
-      id: drawn.id,
-      value: Number(drawn.flags?.arcane15?.value ?? 0),
-      name: CardManager._getCardName(drawn),
-      img: CardManager._getCardImg(drawn) || drawn.img || "icons/svg/hazard.svg",
-      label
-    };
-    await hand.pass(pile, [drawn.id], { chatNotification: false });
-    await CardManager._normalizeHandSize({ actor: writableActor, deck, hand, pile });
-    return info;
+    return await CardManager.temporaryDrawCard(writableActor, label);
   }
 
   static async increasePossession(actor, item) {
@@ -4109,22 +4168,7 @@ Héroïque : ${heroicText}">
           }
 
           try {
-            const pendingRecovery = handActor.getFlag?.('arcane15', 'pendingDestinyRecovery');
-            if (pendingRecovery) {
-              await handActor.unsetFlag('arcane15', 'pendingDestinyRecovery');
-              if (!success && ArcanaManager.getCharacterAtouts(handActor).some(a => a.key === 'boite-de-chocolats')) {
-                const recoveryDraw = await ArcanaManager.#drawTemporaryCard(handActor, 'La vie, c’est comme une boîte de chocolats — récupération de Destin');
-                const recoveryValue = Number(recoveryDraw?.value || 0);
-                if (recoveryValue >= 7) {
-                  const holder = ArcanaManager.#pickDestinyHolder(handActor, handActor, 0);
-                  const state = ArcanaManager.#getDestinyState(holder?.actor ?? handActor);
-                  await (holder?.actor ?? handActor).update({ [state.path]: Number(state.value || 0) + 1 });
-                  await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: handActor }), content: renderPersonalAtoutChatCard({ title: 'La vie, c’est comme une boîte de chocolats', mode: 'Déclenchement', actorName: handActor.name, body: `${handActor.name} récupère <strong>1</strong> point de Destin.`, accent: '#2f5a34' }) });
-                } else {
-                  await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: handActor }), content: renderPersonalAtoutChatCard({ title: 'La vie, c’est comme une boîte de chocolats', mode: 'Déclenchement', actorName: handActor.name, body: `Pas de récupération de Destin.`, accent: '#2f5a34' }) });
-                }
-              }
-            }
+            await ArcanaManager.handleBoiteDeChocolatsRecovery(handActor, { success });
           } catch (recoveryError) {
             console.warn('[ARCANE XV][ARCANA] boite-de-chocolats recovery failed', recoveryError);
           }
