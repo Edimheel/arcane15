@@ -45,68 +45,194 @@ const PERSONAL_ATOUT_DEFINITIONS = [
     key: "remy-julienne",
     name: "Rémy Julienne",
     currentEffect: "Lorsque vous choisissez la pénalité Risque, vous obtenez deux primes au lieu d’une.",
-    heroicEffect: "1 point de Destin : faites un test d’Art (Comédie) / 12. En cas de réussite, vous regagnez tous les points de Vitalité perdus durant ce round. En cas d’échec, seulement la moitié, arrondie à l’inférieur."
+    heroicEffect: "1 point de Destin : faites un test d’Art (Comédie) / 12. En cas de réussite, vous regagnez tous les points de Vitalité perdus durant ce round. En cas d’échec, seulement la moitié, arrondie à l’inférieur.",
+    hasCurrent: true,
+    hasHeroic: true
   },
   {
     key: "kill-bill",
     name: "Kill Bill",
     currentEffect: "Vos dommages à mains nues passent à -1 au lieu de -3.",
-    heroicEffect: "1 point de Destin : vous portez immédiatement une deuxième attaque au corps à corps."
+    heroicEffect: "1 point de Destin : vous portez immédiatement une deuxième attaque au corps à corps.",
+    hasCurrent: true,
+    hasHeroic: true
   },
   {
     key: "jusquici-tout-va-bien",
     name: "Jusqu’ici tout va bien",
     currentEffect: "Lors d’un test de Volonté, si le résultat final ne vous convient pas, vous pouvez une fois piocher une carte et la substituer à la carte initialement jouée.",
-    heroicEffect: "1 point de Destin : vous faites appel aux membres de la petite délinquance de votre ancien quartier pour obtenir quelque chose d’illégal durant cette séance, comme une arme à feu ou de la drogue. Effet limité à une fois par séance."
+    heroicEffect: "1 point de Destin : vous faites appel aux membres de la petite délinquance de votre ancien quartier pour obtenir quelque chose d’illégal durant cette séance, comme une arme à feu ou de la drogue. Effet limité à une fois par séance.",
+    hasCurrent: true,
+    hasHeroic: true
   },
   {
     key: "larnacoeur",
     name: "L’arnacoeur",
     currentEffect: "Vous pouvez utiliser votre compétence Art (Comédie) pour obtenir quelque chose de quelqu’un si vous réussissez un test d’Opposition active contre la Volonté de votre cible.",
-    heroicEffect: "1 point de Destin : lors d’un combat, vous embobinez votre adversaire. Au début de chaque round, faites un test d’Art (Comédie) en opposition avec la Psychologie de la cible. En cas de réussite, vous obtenez deux primes gratuites."
+    heroicEffect: "1 point de Destin : lors d’un combat, vous embobinez votre adversaire. Au début de chaque round, faites un test d’Art (Comédie) en opposition avec la Psychologie de la cible. En cas de réussite, vous obtenez deux primes gratuites.",
+    hasCurrent: true,
+    hasHeroic: true
   },
   {
     key: "actor-studio",
     name: "Actor Studio",
     currentEffect: "Lorsque vous voulez vous introduire dans un milieu particulier et passer pour un habitué, faites un test d’Art (Comédie) contre une difficulté décidée par le meneur. En cas de réussite, vous êtes comme un poisson dans l’eau.",
-    heroicEffect: "1 point de Destin : piochez une carte. Vous obtenez un bonus égal à sa valeur à votre résultat final lors d’un test de Connaissance."
+    heroicEffect: "1 point de Destin : piochez une carte. Vous obtenez un bonus égal à sa valeur à votre résultat final lors d’un test de Connaissance.",
+    hasCurrent: true,
+    hasHeroic: true
   },
   {
     key: "boite-de-chocolats",
     name: "La vie, c’est comme une boîte de chocolats",
     currentEffect: "Lorsque vous échouez à un test alors que vous aviez dépensé 1 point de Destin, piochez une carte : si vous tirez un 7 ou une carte supérieure, vous récupérez le point de Destin perdu.",
-    heroicEffect: "1 point de Destin : par une parole ou une simple attitude, vous redonnez de l’énergie à vos compagnons. Tous ceux qui ne sont pas mal en point piochent une carte et regagnent sa valeur en points de Vitalité."
+    heroicEffect: "1 point de Destin : par une parole ou une simple attitude, vous redonnez de l’énergie à vos compagnons. Tous ceux qui ne sont pas mal en point piochent une carte et regagnent sa valeur en points de Vitalité.",
+    hasCurrent: false,
+    hasHeroic: true
   },
   {
     key: "keyser-soze",
     name: "Keyser Söze",
     currentEffect: "Vous pouvez utiliser votre compétence Art (Comédie) pour faire croire à n’importe qui que vous n’êtes pas l’auteur d’un fait, dans les limites de la logique. Faites un test d’Opposition active contre la Volonté de votre cible.",
-    heroicEffect: "1 point de Destin : durant un combat, les ennemis ne vous prennent pas pour cible, sauf si vous cherchez à les blesser ou si vous êtes leur dernier adversaire."
+    heroicEffect: "1 point de Destin : durant un combat, les ennemis ne vous prennent pas pour cible, sauf si vous cherchez à les blesser ou si vous êtes leur dernier adversaire.",
+    hasCurrent: true,
+    hasHeroic: true
   },
   {
     key: "monte-cristo",
     name: "Le Comte de Monte-Cristo",
     currentEffect: "Lorsque vous piochez un as, vous pouvez le placer directement dans la défausse et piocher une nouvelle carte à la place.",
-    heroicEffect: "1 point de Destin : piochez une carte. Vous obtenez un bonus égal à sa valeur à votre résultat final lors d’un test de Volonté."
+    heroicEffect: "1 point de Destin : piochez une carte. Vous obtenez un bonus égal à sa valeur à votre résultat final lors d’un test de Volonté.",
+    hasCurrent: true,
+    hasHeroic: true
   },
   {
     key: "dame-de-shanghai",
     name: "La dame de Shanghai",
     currentEffect: "Vous pouvez utiliser votre compétence Art (Comédie) pour déclencher du désir chez un interlocuteur. Faites une Opposition active contre sa Volonté. En cas de réussite, vous obtenez durant toute la scène un bonus égal à la marge de réussite à vos tests d’Éloquence, d’Autorité ou de Psychologie contre cette personne.",
-    heroicEffect: "1 point de Destin : vous attirez l’attention de l’ensemble de vos interlocuteurs durant une scène. Piochez une carte. Vous obtenez un bonus à vos tests d’Éloquence, de Psychologie et d’Autorité égal à sa valeur."
+    heroicEffect: "1 point de Destin : vous attirez l’attention de l’ensemble de vos interlocuteurs durant une scène. Piochez une carte. Vous obtenez un bonus à vos tests d’Éloquence, de Psychologie et d’Autorité égal à sa valeur.",
+    hasCurrent: true,
+    hasHeroic: true
   },
   {
     key: "marquise-de-merteuil",
     name: "Marquise de Merteuil",
     currentEffect: "Au cours d’une discussion avec un individu, faites une Opposition active de Psychologie. En cas de réussite, vous obtenez un bonus égal à la marge de réussite durant la scène pour toutes les futures actions en opposition contre lui, en combat comme pour les tests sociaux.",
-    heroicEffect: "1 point de Destin : vous faites profiter à vos compagnons de cette prime, s’ils sont en contact direct avec vous."
+    heroicEffect: "1 point de Destin : vous faites profiter à vos compagnons de cette prime, s’ils sont en contact direct avec vous.",
+    hasCurrent: true,
+    hasHeroic: true
+  },
+  {
+    key: "terminator",
+    name: "Terminator",
+    currentEffect: "",
+    heroicEffect: "1 point de Destin : regagne immédiatement 4 points de Vitalité.",
+    hasCurrent: false,
+    hasHeroic: true
+  },
+  {
+    key: "mission",
+    name: "Mission",
+    currentEffect: "",
+    heroicEffect: "1 point de Destin : piochez une carte. Vous obtenez un bonus égal à sa valeur à votre prochain test d’Éloquence, de Psychologie ou de Volonté.",
+    hasCurrent: false,
+    hasHeroic: true
+  },
+  {
+    key: "predator",
+    name: "Predator",
+    currentEffect: "",
+    heroicEffect: "1 point de Destin : dans la nature, piochez une carte. Vous obtenez un bonus égal à sa valeur à votre initiative.",
+    hasCurrent: false,
+    hasHeroic: true
+  },
+  {
+    key: "la-tour-infernale",
+    name: "La Tour infernale",
+    currentEffect: "Vous êtes insensible au feu et à la chaleur.",
+    heroicEffect: "1 point de Destin : votre bâton ferré s’embrase et passe à +3.",
+    hasCurrent: true,
+    hasHeroic: true,
+    aliases: ["La Tour infernale", "Tour infernale"]
+  },
+  {
+    key: "incassable",
+    name: "Incassable",
+    currentEffect: "Vous ne pouvez être amené à 0 Vitalité que par Alphonse Blatty ou par quelqu’un accordé à l’arcane du Mat.",
+    heroicEffect: "",
+    hasCurrent: true,
+    hasHeroic: false
+  },
+  {
+    key: "bruce-tout-puissant",
+    name: "Bruce tout-puissant",
+    currentEffect: "",
+    heroicEffect: "1 point de Destin : vous pouvez dépasser votre somme des cartes pendant votre tour.",
+    hasCurrent: false,
+    hasHeroic: true,
+    aliases: ["Bruce tout-puissant"]
+  },
+  {
+    key: "flashdance",
+    name: "Flashdance",
+    currentEffect: "",
+    heroicEffect: "1 point de Destin : piochez une carte. Vous obtenez un bonus égal à sa valeur à votre prochain test de Défense.",
+    hasCurrent: false,
+    hasHeroic: true
+  },
+  {
+    key: "youre-talking-to-me",
+    name: "You’re talking to me ?",
+    currentEffect: "",
+    heroicEffect: "1 point de Destin : une cible subit un malus de -2 à tous ses tests pendant la scène.",
+    hasCurrent: false,
+    hasHeroic: true,
+    aliases: ["You're talking to me ?", "You’re talking to me ?", "Youre talking to me ?"]
+  },
+  {
+    key: "black-widow",
+    name: "Black Widow",
+    currentEffect: "",
+    heroicEffect: "1 point de Destin : en combat, vous pouvez interrompre l’action d’un autre personnage, porter une attaque soudaine, puis agir normalement à votre tour durant le même round.",
+    hasCurrent: false,
+    hasHeroic: true
+  },
+  {
+    key: "arrete-moi-si-tu-peux",
+    name: "Arrête-moi si tu peux",
+    currentEffect: "Lors d’une Opposition active hors combat, vous pouvez remplacer la carte jouée par un PJ par l’une des vôtres. La carte initiale du PJ est défaussée.",
+    heroicEffect: "",
+    hasCurrent: true,
+    hasHeroic: false,
+    aliases: ["Arrete-moi si tu peux", "Arrête-moi si tu peux"]
+  },
+  {
+    key: "citizen-kane",
+    name: "Citizen Kane",
+    currentEffect: "",
+    heroicEffect: "1 point de Destin : pour le round, substituez Autorité à Défense.",
+    hasCurrent: false,
+    hasHeroic: true
   }
 ];
 
 const ARCANA_BY_ID = new Map(ARCANA_DEFINITIONS.map(a => [a.arcaneId, a]));
 const PERSONAL_BY_KEY = new Map(PERSONAL_ATOUT_DEFINITIONS.map(a => [a.key, a]));
 
+function atoutTextMatchesDefinition(text, def) {
+  const normalizedText = normalizeText(String(text || ""));
+  if (!normalizedText || !def) return false;
+  const names = [def.name, ...(Array.isArray(def.aliases) ? def.aliases : [])]
+    .map(v => normalizeText(String(v || "")))
+    .filter(Boolean);
+  return names.some(name => normalizedText.includes(name));
+}
+
 function renderPersonalAtoutChatCard({ title = '', mode = 'Effet courant', body = '', actorName = '', accent = '#5b1f43', footer = '' } = {}) {
+  title = repairMojibake(title);
+  mode = repairMojibake(mode);
+  body = repairMojibake(body);
+  actorName = repairMojibake(actorName);
+  footer = repairMojibake(footer);
   return `
     <div class="axv-chat-card" style="width:100%; max-width:100%; box-sizing:border-box; border:2px solid ${accent}; border-radius:16px; overflow:hidden; background:linear-gradient(180deg, #fff8fb 0%, #ffffff 100%); box-shadow:0 10px 24px rgba(32, 12, 24, .14);">
       <div style="padding:8px 12px; background:linear-gradient(90deg, ${accent} 0%, #161616 100%); color:#fff; box-sizing:border-box;">
@@ -673,7 +799,20 @@ const DEFAULT_CHARACTER_ATOUTS_BY_ACTOR = new Map([
   ["eugene ndiaye", ["actor-studio", "boite-de-chocolats"]],
   ["eugène ndiaye", ["actor-studio", "boite-de-chocolats"]],
   ["marvin vaillant", ["keyser-soze", "monte-cristo"]],
-  ["loren young", ["dame-de-shanghai", "marquise-de-merteuil"]]
+  ["loren young", ["dame-de-shanghai", "marquise-de-merteuil"]],
+  ["alphonse blatty", ["bruce-tout-puissant"]],
+  ["christophe holmais", ["predator"]],
+  ["hans varg", ["arrete-moi-si-tu-peux"]],
+  ["iris ullman", ["mission"]],
+  ["liana ferrand", ["flashdance"]],
+  ["urbain ullman", ["citizen-kane"]],
+  ["franck dussiens", ["terminator"]],
+  ["kevin morvan", ["youre-talking-to-me"]],
+  ["fiona noor", ["black-widow"]],
+  ["jeune blatty", ["la-tour-infernale", "incassable"]],
+  ["le jeune blatty", ["la-tour-infernale", "incassable"]],
+  ["l'incendiaire", ["la-tour-infernale", "incassable"]],
+  ["l’incendiaire", ["la-tour-infernale", "incassable"]]
 ]);
 
 
@@ -729,7 +868,42 @@ function gmWhisperIds() {
   return game.users.filter(u => u.isGM).map(u => u.id);
 }
 
+
+function repairMojibake(value) {
+  const raw = String(value ?? "");
+  if (!raw) return "";
+  if (!/[ÃÂâ€]/.test(raw)) return raw;
+  try {
+    return decodeURIComponent(escape(raw));
+  } catch (_err) {
+    return raw
+      .replace(/Ã©/g, "é")
+      .replace(/Ã¨/g, "è")
+      .replace(/Ãª/g, "ê")
+      .replace(/Ã«/g, "ë")
+      .replace(/Ã /g, "à")
+      .replace(/Ã¢/g, "â")
+      .replace(/Ã®/g, "î")
+      .replace(/Ã¯/g, "ï")
+      .replace(/Ã´/g, "ô")
+      .replace(/Ã¶/g, "ö")
+      .replace(/Ã¹/g, "ù")
+      .replace(/Ã»/g, "û")
+      .replace(/Ã¼/g, "ü")
+      .replace(/Ã§/g, "ç")
+      .replace(/Å“/g, "œ")
+      .replace(/â€™/g, "’")
+      .replace(/â€œ/g, "“")
+      .replace(/â€/g, "”")
+      .replace(/â€“/g, "–")
+      .replace(/â€”/g, "—")
+      .replace(/â€¦/g, "…")
+      .replace(/Â/g, "");
+  }
+}
+
 function normalizeText(str) {
+  str = repairMojibake(str);
   return String(str || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -891,6 +1065,12 @@ export class ArcanaManager {
     next.audienceBonus = { value: 0, label: "" };
     next.merteuilBonus = { value: 0, targetId: "", targetName: "", label: "" };
     next.sharedMerteuilBonus = { value: 0, sourceActorId: "", targetId: "", targetName: "", label: "" };
+    if (next.statuses) {
+      delete next.statuses.citizenKaneDefense;
+      delete next.statuses.blackWidowReady;
+      delete next.statuses.bruceToutPuissant;
+      delete next.statuses.tourInfernaleIgnited;
+    }
     return next;
   }
 
@@ -1193,10 +1373,9 @@ export class ArcanaManager {
   static getCharacterAtouts(actor) {
     if (!actor) return [];
     const text = String(actor.system?.atouts?.personnage ?? actor._source?.system?.atouts?.personnage ?? "").trim();
-    const normalized = normalizeText(text);
     const keys = new Set();
     for (const def of PERSONAL_ATOUT_DEFINITIONS) {
-      if (normalized.includes(normalizeText(def.name))) keys.add(def.key);
+      if (atoutTextMatchesDefinition(text, def)) keys.add(def.key);
     }
     if (!keys.size) {
       for (const key of DEFAULT_CHARACTER_ATOUTS_BY_ACTOR.get(normalizeText(actor.name)) ?? []) keys.add(key);
@@ -1214,6 +1393,9 @@ export class ArcanaManager {
       if (k === "jusquici-tout-va-bien" && sessionFlags?.jusquiciUsed) badges.push("Héroïque utilisé");
       if (k === "actor-studio" && runtime?.pendingKnowledgeBonus?.value) badges.push(`Connaissance +${Number(runtime.pendingKnowledgeBonus.value)}`);
       if (k === "monte-cristo" && runtime?.pendingVolonteBonus?.value) badges.push(`Volonté +${Number(runtime.pendingVolonteBonus.value)}`);
+      if (k === "mission" && runtime?.pendingMissionBonus?.value) badges.push(`Social / Volonté +${Number(runtime.pendingMissionBonus.value)}`);
+      if (k === "flashdance" && runtime?.pendingDefenseBonus?.value) badges.push(`Défense +${Number(runtime.pendingDefenseBonus.value)}`);
+      if (k === "predator" && runtime?.pendingReflexesBonus?.value) badges.push(`Réflexes +${Number(runtime.pendingReflexesBonus.value)}`);
       if (k === "dame-de-shanghai" && runtime?.shanghaiBonus?.value && runtime?.shanghaiBonus?.targetName) badges.push(`${runtime.shanghaiBonus.targetName} : +${Number(runtime.shanghaiBonus.value)}`);
       else if (k === "dame-de-shanghai" && runtime?.audienceBonus?.value) badges.push(`Social +${Number(runtime.audienceBonus.value)}`);
       if (k === "marquise-de-merteuil" && runtime?.merteuilBonus?.value && runtime?.merteuilBonus?.targetName) badges.push(`${runtime.merteuilBonus.targetName} : +${Number(runtime.merteuilBonus.value)}`);
@@ -1221,12 +1403,17 @@ export class ArcanaManager {
       if (k === "larnacoeur" && runtime?.larnacoeurCombat?.targetName) badges.push(`Combat : ${runtime.larnacoeurCombat.targetName}`);
       if (k === "keyser-soze" && runtime?.statuses?.keyserSozeUntargetable) badges.push("Ignore ciblage");
       if (k === "boite-de-chocolats" && actor.getFlag?.("arcane15", "pendingDestinyRecovery")) badges.push("Récup. Destin en attente");
+      if (k === "citizen-kane" && runtime?.statuses?.citizenKaneDefense) badges.push("Autorité => Défense");
+      if (k === "black-widow" && runtime?.statuses?.blackWidowReady) badges.push("Interruption prête");
+      if (runtime?.allTestsMalus?.value && (k === "youre-talking-to-me" || k === "pendu" || k === "sans-nom")) badges.push(`Malus global -${Number(runtime.allTestsMalus.value)}`);
       return {
         key: def.key,
-        name: def.name,
-        currentEffect: def.currentEffect,
-        heroicEffect: def.heroicEffect,
+        name: repairMojibake(def.name),
+        currentEffect: repairMojibake(def.currentEffect),
+        heroicEffect: repairMojibake(def.heroicEffect),
         heroicCost: 1,
+        hasCurrent: def.hasCurrent !== false,
+        hasHeroic: def.hasHeroic !== false,
         statusBadges: badges
       };
     }).filter(Boolean);
@@ -1321,6 +1508,49 @@ export class ArcanaManager {
         labels.push(`${pendingVolonte.label || 'Bonus Volonté'} +${bonus}`);
         consume.push("pendingVolonteBonus");
       }
+    }
+
+    const pendingMission = runtime?.pendingMissionBonus;
+    if (pendingMission?.value && ["eloquence", "psychologie", "volonte"].includes(skill)) {
+      const bonus = Number(pendingMission.value || 0);
+      if (bonus) {
+        net += bonus;
+        labels.push(`${pendingMission.label || 'Mission'} +${bonus}`);
+        consume.push("pendingMissionBonus");
+      }
+    }
+
+    const pendingDefense = runtime?.pendingDefenseBonus;
+    if (pendingDefense?.value && skill === "defense") {
+      const bonus = Number(pendingDefense.value || 0);
+      if (bonus) {
+        net += bonus;
+        labels.push(`${pendingDefense.label || 'Flashdance'} +${bonus}`);
+        consume.push("pendingDefenseBonus");
+      }
+    }
+
+    const pendingReflexes = runtime?.pendingReflexesBonus;
+    if (pendingReflexes?.value && skill === "reflexes") {
+      const bonus = Number(pendingReflexes.value || 0);
+      if (bonus) {
+        net += bonus;
+        labels.push(`${pendingReflexes.label || 'Predator'} +${bonus}`);
+        consume.push("pendingReflexesBonus");
+      }
+    }
+
+    if (runtime?.statuses?.citizenKaneDefense && skill === "defense") {
+      const defenseBase = Number(actor.system?.competences?.defense?.val || 0);
+      const autoriteBase = Number(actor.system?.competences?.autorite?.val || 0);
+      const delta = autoriteBase - defenseBase;
+      if (delta) {
+        net += delta;
+        labels.push(`Citizen Kane ${delta > 0 ? '+' : ''}${delta}`);
+      } else {
+        labels.push(`Citizen Kane 0`);
+      }
+      consume.push("statuses.citizenKaneDefense");
     }
 
     const socialSkills = ["eloquence", "autorite", "psychologie"];
@@ -1982,9 +2212,10 @@ export class ArcanaManager {
         actions.style.marginTop = '10px';
         card.appendChild(actions);
       }
-      actions.innerHTML = def.key === 'boite-de-chocolats'
-        ? `<button type="button" class="axv-arcana-btn axv-personal-atout-heroic" data-atout-key="${def.key}">Effet héroïque (-1 Destin)</button>`
-        : `<button type="button" class="axv-arcana-btn axv-personal-atout-current" data-atout-key="${def.key}">Effet courant</button><button type="button" class="axv-arcana-btn axv-personal-atout-heroic" data-atout-key="${def.key}">Effet héroïque (-1 Destin)</button>`;
+      const buttons = [];
+      if (def.hasCurrent !== false) buttons.push(`<button type="button" class="axv-arcana-btn axv-personal-atout-current" data-atout-key="${def.key}">Effet courant</button>`);
+      if (def.hasHeroic !== false) buttons.push(`<button type="button" class="axv-arcana-btn axv-personal-atout-heroic" data-atout-key="${def.key}">Effet héroïque (-1 Destin)</button>`);
+      actions.innerHTML = buttons.join('');
     });
 
     root.querySelectorAll('.axv-personal-atout-current').forEach(btn => {
@@ -2795,6 +3026,12 @@ export class ArcanaManager {
           )
         });
       }
+      case 'la-tour-infernale':
+        return ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet courant', actorName: writableActor.name, body: `Effet passif : <strong>${writableActor.name}</strong> est insensible au feu et à la chaleur.`, accent: '#3d5875' }) });
+      case 'incassable':
+        return ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet courant', actorName: writableActor.name, body: `Effet passif : <strong>${writableActor.name}</strong> ne peut être amené à 0 Vitalité que par Alphonse Blatty ou par quelqu’un accordé à l’arcane du Mat.`, accent: '#3d5875' }) });
+      case 'arrete-moi-si-tu-peux':
+        return ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet courant', actorName: writableActor.name, body: `Lors d’une opposition active hors combat, ${writableActor.name} peut remplacer la carte jouée par un PJ par l’une des siennes. La carte initiale du PJ est défaussée.`, accent: '#3d5875' }) });
       default:
         return ui.notifications?.info?.('Effet courant principalement passif ou contextuel.');
     }
@@ -3053,6 +3290,69 @@ export class ArcanaManager {
             accent: '#3d5875'
           })
         });
+        break;
+      }
+      case 'terminator': {
+        const healResult = await game.arcane15?.combat?.applyVitalityHealing?.(writableActor, 4, { sourceLabel: atout.name });
+        const healed = Number(healResult?.healed ?? 4);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body: `${writableActor.name} récupère <strong>${healed}</strong> point(s) de Vitalité.`, accent: '#3d5875' }) });
+        break;
+      }
+      case 'mission': {
+        const draw = await ArcanaManager.#drawTemporaryCard(writableActor, `${atout.name} — bonus social`);
+        if (!draw) return;
+        runtime.pendingMissionBonus = { value: Number(draw.value || 0), label: atout.name };
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body: `<div><strong>Carte piochée :</strong> ${draw.name || 'Carte'} (+${Number(draw.value || 0)})</div><div style="margin-top:4px;">Bonus stocké pour le prochain test d’Éloquence, de Psychologie ou de Volonté.</div>`, accent: '#3d5875' }) });
+        break;
+      }
+      case 'predator': {
+        const draw = await ArcanaManager.#drawTemporaryCard(writableActor, `${atout.name} — initiative`);
+        if (!draw) return;
+        runtime.pendingReflexesBonus = { value: Number(draw.value || 0), label: atout.name };
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body: `<div><strong>Carte piochée :</strong> ${draw.name || 'Carte'} (+${Number(draw.value || 0)})</div><div style="margin-top:4px;">Bonus stocké pour le prochain jet de Réflexes / initiative. À utiliser dans la nature.</div>`, accent: '#3d5875' }) });
+        break;
+      }
+      case 'la-tour-infernale': {
+        runtime.statuses.tourInfernaleIgnited = true;
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body: `Le bâton ferré de ${writableActor.name} s’embrase et passe à <strong>+3</strong> jusqu’à résolution par le MJ.`, accent: '#3d5875' }) });
+        break;
+      }
+      case 'bruce-tout-puissant': {
+        runtime.statuses.bruceToutPuissant = true;
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body: `${writableActor.name} peut dépasser sa somme des cartes pendant son tour.`, accent: '#3d5875' }) });
+        break;
+      }
+      case 'flashdance': {
+        const draw = await ArcanaManager.#drawTemporaryCard(writableActor, `${atout.name} — Défense`);
+        if (!draw) return;
+        runtime.pendingDefenseBonus = { value: Number(draw.value || 0), label: atout.name };
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body: `<div><strong>Carte piochée :</strong> ${draw.name || 'Carte'} (+${Number(draw.value || 0)})</div><div style="margin-top:4px;">Bonus stocké pour le prochain test de Défense.</div>`, accent: '#3d5875' }) });
+        break;
+      }
+      case 'youre-talking-to-me': {
+        if (!target) return ui.notifications?.warn?.('Cible un interlocuteur pour utiliser cet atout.');
+        const targetRuntime = foundry.utils.deepClone(target.getFlag?.('arcane15', 'arcanaRuntime') || {});
+        targetRuntime.allTestsMalus = { value: 2, label: atout.name };
+        await target.setFlag('arcane15', 'arcanaRuntime', targetRuntime);
+        ArcanaManager.refreshUIForActor(target);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body: `${target.name} subit un malus de <strong>-2</strong> à tous ses tests pendant la scène.`, accent: '#3d5875' }) });
+        break;
+      }
+      case 'black-widow': {
+        runtime.statuses.blackWidowReady = true;
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body: `${writableActor.name} peut interrompre une action, porter une attaque soudaine, puis agir normalement à son tour durant le même round.`, accent: '#3d5875' }) });
+        break;
+      }
+      case 'citizen-kane': {
+        runtime.statuses.citizenKaneDefense = true;
+        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
+        await ChatMessage.create({ speaker: ChatMessage.getSpeaker({ actor: writableActor }), content: renderPersonalAtoutChatCard({ title: atout.name, mode: 'Effet héroïque', actorName: writableActor.name, body: `Pour le prochain calcul de Défense, ${writableActor.name} substitue <strong>Autorité</strong> à <strong>Défense</strong>.`, accent: '#3d5875' }) });
         break;
       }
       default:
