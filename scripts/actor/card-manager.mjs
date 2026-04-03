@@ -1160,7 +1160,8 @@ export class CardManager {
     const baseSkillValue = Number(skillData?.total ?? 0);
     const malEnPointMod = (actor?.system?.stats?.malEnPoint || actor?.getFlag?.("arcane15", "malEnPoint")) ? -1 : 0;
     const ArcanaManager = globalThis.AXVArcanaManager || game.arcane15?.ArcanaManager || null;
-    const arcanaMods = ArcanaManager?.getSkillModifiers ? ArcanaManager.getSkillModifiers(actor, skillKey) : { net: 0, labels: [], consume: [] };
+    const selectedTarget = Array.from(game.user?.targets ?? [])[0]?.actor ?? null;
+    const arcanaMods = ArcanaManager?.getSkillModifiers ? ArcanaManager.getSkillModifiers(actor, skillKey, { targetActor: selectedTarget, isOpposition: false }) : { net: 0, labels: [], consume: [] };
     const skillValue = baseSkillValue + malEnPointMod + Number(arcanaMods?.net || 0);
 
     const cards = hand.cards.contents.slice().sort((a, b) => {

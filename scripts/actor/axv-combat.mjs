@@ -972,6 +972,7 @@ export class CombatManager {
     };
 
     CombatManager.#gmSessions.set(sessionId, session);
+    try { await CombatManager.#activateCombatScene(session); } catch (e) { console.warn('[ARCANE XV][COMBAT][GM] activate combat scene failed', e); }
 
     console.log("[ARCANE XV][COMBAT][GM] start session", { sessionId, attacker: session.attacker, defender: session.defender, initiative: session.initiative });
 
@@ -2102,6 +2103,35 @@ export class CombatManager {
     return (Array.isArray(ids) ? ids : []).map(id => map.get(id) || id);
   }
 
+  static #pickMerteuilBonus(actor, targetActor, blocked = null) {
+    const runtime = actor?.getFlag?.('arcane15', 'arcanaRuntime') || {};
+    const blockedSet = blocked instanceof Set ? blocked : new Set(Array.isArray(blocked) ? blocked : []);
+    const targetId = String(targetActor?.id || '');
+    const personal = runtime?.merteuilBonus;
+    if (personal?.value && targetId && String(personal?.targetId || '') === targetId && !blockedSet.has('merteuilBonus')) {
+      return { key: 'merteuilBonus', bonus: personal };
+    }
+    const shared = runtime?.sharedMerteuilBonus;
+    if (shared?.value && targetId && String(shared?.targetId || '') === targetId && !blockedSet.has('sharedMerteuilBonus')) {
+      return { key: 'sharedMerteuilBonus', bonus: shared };
+    }
+    return null;
+  }
+
+  static async #consumeMerteuilBonuses(actor, keys = []) {
+    const unique = [...new Set((keys || []).filter(Boolean))];
+    if (!actor || !unique.length) return;
+    const runtime = foundry.utils.deepClone(actor.getFlag?.('arcane15', 'arcanaRuntime') || {});
+    let dirty = false;
+    for (const key of unique) {
+      if (runtime && Object.prototype.hasOwnProperty.call(runtime, key)) {
+        delete runtime[key];
+        dirty = true;
+      }
+    }
+    if (dirty) await actor.setFlag('arcane15', 'arcanaRuntime', runtime);
+  }
+
   static async #gmResolve(data) {
     const { sessionId } = data;
     const session = CombatManager.#gmSessions.get(sessionId);
@@ -2142,7 +2172,7 @@ export class CombatManager {
     const ppAtt = CombatManager.#ppState(session, 'attacker');
     const ppDef = CombatManager.#ppState(session, 'defender');
 
-    const makeExchange = ({ attackerSide, defenderSide, attackActor, defenseActor, attackCard, defenseCard, attackSkill, attackSkillLabel = "Combat", defenseSkill, weaponMod, protection, weaponName }) => {
+    const makeExchange = ({ attackerSide, defenderSide, attackActor, defenseActor, attackCard, defenseCard, attackSkill, attackSkillLabel = "Combat", defenseSkill, weaponMod, protection, weaponName, consumedMerteuil = new Map() }) => {
       const attackPP = attackerSide === 'attacker' ? ppAtt : ppDef;
       const defensePP = defenderSide === 'attacker' ? ppAtt : ppDef;
 
@@ -2176,8 +2206,12 @@ export class CombatManager {
       if (attackAllTestsMalus) { atkAdj -= attackAllTestsMalus; atkStateAdj -= attackAllTestsMalus; atkStateMods.push(`${attackRuntime?.allTestsMalus?.label || 'Malus arcane'} -${attackAllTestsMalus}`); }
       if (defenseAllTestsMalus) { defAdj -= defenseAllTestsMalus; defStateAdj -= defenseAllTestsMalus; defStateMods.push(`${defenseRuntime?.allTestsMalus?.label || 'Malus arcane'} -${defenseAllTestsMalus}`); }
 
-      const attackMerteuil = [attackRuntime?.merteuilBonus, attackRuntime?.sharedMerteuilBonus].find(b => b?.value && String(b?.targetId || '') === String(defenseActor?.id || '')) || null;
-      const defenseMerteuil = [defenseRuntime?.merteuilBonus, defenseRuntime?.sharedMerteuilBonus].find(b => b?.value && String(b?.targetId || '') === String(attackActor?.id || '')) || null;
+      const attackBlocked = consumedMerteuil.get(String(attackActor?.id || '')) || null;
+      const defenseBlocked = consumedMerteuil.get(String(defenseActor?.id || '')) || null;
+      const attackMerteuilMatch = CombatManager.#pickMerteuilBonus(attackActor, defenseActor, attackBlocked);
+      const defenseMerteuilMatch = CombatManager.#pickMerteuilBonus(defenseActor, attackActor, defenseBlocked);
+      const attackMerteuil = attackMerteuilMatch?.bonus || null;
+      const defenseMerteuil = defenseMerteuilMatch?.bonus || null;
       if (attackMerteuil?.value) { atkAdj += Number(attackMerteuil.value || 0); atkStateAdj += Number(attackMerteuil.value || 0); atkStateMods.push(`${attackMerteuil.label || 'Marquise de Merteuil'} +${Number(attackMerteuil.value || 0)}`); }
       if (defenseMerteuil?.value) { defAdj += Number(defenseMerteuil.value || 0); defStateAdj += Number(defenseMerteuil.value || 0); defStateMods.push(`${defenseMerteuil.label || 'Marquise de Merteuil'} +${Number(defenseMerteuil.value || 0)}`); }
 
@@ -2249,7 +2283,6 @@ export class CombatManager {
         defenderSide,
         attackCard,
         defenseCard,
-        // Breakdown values for detailed chat display
         attackSkillVal: Number(attackSkill),
         attackSkillLabel: attackSkillLabel,
         atkCardVal,
@@ -2276,6 +2309,12 @@ export class CombatManager {
         hit,
         damage,
         damageMods,
+        consumedMerteuil: {
+          attackActorId: attackMerteuilMatch ? String(attackActor?.id || '') : null,
+          attackKey: attackMerteuilMatch?.key || null,
+          defenseActorId: defenseMerteuilMatch ? String(defenseActor?.id || '') : null,
+          defenseKey: defenseMerteuilMatch?.key || null
+        },
         pp: {
           attacker: { primes: [...attackPP.primes], penalites: [...attackPP.penalites] },
           defender: { primes: [...defensePP.primes], penalites: [...defensePP.penalites] },
@@ -2287,50 +2326,44 @@ export class CombatManager {
       };
     };
 
+    const consumedMerteuil = new Map();
+
     const first = attackerActsFirst
-      ? makeExchange({ attackerSide: 'attacker', defenderSide: 'defender', attackActor: attackerActor, defenseActor: defenderActor, attackCard: aAtk, defenseCard: dDef, attackSkill: atkCombat, attackSkillLabel: atkCombatLabel, defenseSkill: defDefenseSkill, weaponMod: aWeapon.attackMod, protection: defProtection, weaponName: aWeapon.name })
-      : makeExchange({ attackerSide: 'defender', defenderSide: 'attacker', attackActor: defenderActor, defenseActor: attackerActor, attackCard: dAtk, defenseCard: aDef, attackSkill: defCombat, attackSkillLabel: defCombatLabel, defenseSkill: atkDefenseSkill, weaponMod: dWeapon.attackMod, protection: atkProtection, weaponName: dWeapon.name });
+      ? makeExchange({ attackerSide: 'attacker', defenderSide: 'defender', attackActor: attackerActor, defenseActor: defenderActor, attackCard: aAtk, defenseCard: dDef, attackSkill: atkCombat, attackSkillLabel: atkCombatLabel, defenseSkill: defDefenseSkill, weaponMod: aWeapon.attackMod, protection: defProtection, weaponName: aWeapon.name, consumedMerteuil })
+      : makeExchange({ attackerSide: 'defender', defenderSide: 'attacker', attackActor: defenderActor, defenseActor: attackerActor, attackCard: dAtk, defenseCard: aDef, attackSkill: defCombat, attackSkillLabel: defCombatLabel, defenseSkill: atkDefenseSkill, weaponMod: dWeapon.attackMod, protection: atkProtection, weaponName: dWeapon.name, consumedMerteuil });
 
-    const second = attackerActsFirst
-      ? makeExchange({ attackerSide: 'defender', defenderSide: 'attacker', attackActor: defenderActor, defenseActor: attackerActor, attackCard: dAtk, defenseCard: aDef, attackSkill: defCombat, attackSkillLabel: defCombatLabel, defenseSkill: atkDefenseSkill, weaponMod: dWeapon.attackMod, protection: atkProtection, weaponName: dWeapon.name })
-      : makeExchange({ attackerSide: 'attacker', defenderSide: 'defender', attackActor: attackerActor, defenseActor: defenderActor, attackCard: aAtk, defenseCard: dDef, attackSkill: atkCombat, attackSkillLabel: atkCombatLabel, defenseSkill: defDefenseSkill, weaponMod: aWeapon.attackMod, protection: defProtection, weaponName: aWeapon.name });
+    const markConsumedMerteuil = (exchange) => {
+      if (!exchange?.consumedMerteuil) return;
+      for (const [actorId, key] of [
+        [exchange.consumedMerteuil.attackActorId, exchange.consumedMerteuil.attackKey],
+        [exchange.consumedMerteuil.defenseActorId, exchange.consumedMerteuil.defenseKey]
+      ]) {
+        if (!actorId || !key) continue;
+        const set = consumedMerteuil.get(String(actorId)) || new Set();
+        set.add(String(key));
+        consumedMerteuil.set(String(actorId), set);
+      }
+    };
 
-    const applyDamage = async (exchange) => {
-      if (!exchange.hit || exchange.damage <= 0) return null;
-      try {
-        const targetActor = exchange.defenderSide === 'attacker' ? attackerActor : defenderActor;
-
-        let targetTokDoc = null;
-        if (exchange.defenderSide === 'attacker') {
-          targetTokDoc = attackerTokDoc || null;
-        } else {
-          targetTokDoc = tokDoc;
-        }
-
-        console.log('[ARCANE XV][COMBAT][GM] applyDamage', {
-          target: targetActor?.name,
-          damage: exchange.damage,
-          hasToken: !!targetTokDoc,
-          actorId: targetActor?.id
-        });
-
-        const applied = await CombatManager.applyVitalityDamage(targetActor, exchange.damage, {
-          targetTokDoc,
-          sourceLabel: 'Combat',
-          attackerActor: exchange.attackerSide === 'attacker' ? attackerActor : defenderActor
-        });
-
-        console.log('[ARCANE XV][COMBAT][GM] applyDamage OK', applied);
-        return applied;
-      } catch (e) {
-        console.error('[ARCANE XV][COMBAT][GM] applyDamage FAILED', e, { exchange });
-        return null;
+    const applyConsumedMerteuilFlags = async () => {
+      for (const [actorId, keysSet] of consumedMerteuil.entries()) {
+        const targetActor = [attackerActor, defenderActor].find(a => String(a?.id || '') === String(actorId));
+        if (!targetActor) continue;
+        await CombatManager.#consumeMerteuilBonuses(targetActor, [...keysSet]);
       }
     };
 
     const applied = [];
     const firstApplied = await applyDamage(first); if (firstApplied) applied.push(firstApplied);
+    markConsumedMerteuil(first);
+
+    const second = attackerActsFirst
+      ? makeExchange({ attackerSide: 'defender', defenderSide: 'attacker', attackActor: defenderActor, defenseActor: attackerActor, attackCard: dAtk, defenseCard: aDef, attackSkill: defCombat, attackSkillLabel: defCombatLabel, defenseSkill: atkDefenseSkill, weaponMod: dWeapon.attackMod, protection: atkProtection, weaponName: dWeapon.name, consumedMerteuil })
+      : makeExchange({ attackerSide: 'attacker', defenderSide: 'defender', attackActor: attackerActor, defenseActor: defenderActor, attackCard: aAtk, defenseCard: dDef, attackSkill: atkCombat, attackSkillLabel: atkCombatLabel, defenseSkill: defDefenseSkill, weaponMod: aWeapon.attackMod, protection: defProtection, weaponName: aWeapon.name, consumedMerteuil });
+
     const secondApplied = await applyDamage(second); if (secondApplied) applied.push(secondApplied);
+    markConsumedMerteuil(second);
+    await applyConsumedMerteuilFlags();
 
     session.resolved = {
       done: true,
@@ -3896,6 +3929,7 @@ if (!allowedSide || sideKey !== allowedSide) return;
     const session = CombatManager.#gmSessions.get(sessionId);
     if (!session) return;
     session.ended = true;
+    try { await CombatManager.#deactivateCombatScene(session); } catch (e) { console.warn('[ARCANE XV][COMBAT][GM] deactivate combat scene failed', e); }
     try {
       const attackerWorldActor = game.actors.get(session.attacker.actorId);
       const defenderWorldActor = game.actors.get(session.defender.actorId);
@@ -3932,6 +3966,54 @@ if (!allowedSide || sideKey !== allowedSide) return;
       await CombatManager.#emit({ type: "axvCombat:close", toUserId: userId, fromUserId: game.user.id, sessionId, role });
     }
     CombatManager.#gmSessions.delete(sessionId);
+  }
+
+  static getSceneContext(sceneId = canvas.scene?.id) {
+    const sceneDoc = game.scenes?.get?.(sceneId) ?? (canvas.scene?.id === sceneId ? canvas.scene : null);
+    if (!sceneDoc) return null;
+    const combatScene = sceneDoc.getFlag?.('arcane15', 'combatScene') || null;
+    if (combatScene?.active && combatScene?.ref) {
+      return {
+        type: 'combat',
+        active: true,
+        sceneId: sceneDoc.id,
+        ref: String(combatScene.ref),
+        label: combatScene.label || 'Combat',
+        sessionId: combatScene.sessionId || null,
+        startedAt: Number(combatScene.startedAt || 0) || 0
+      };
+    }
+    return null;
+  }
+
+  static async #activateCombatScene(session) {
+    if (!game.user?.isGM || !session?.sceneId || !session?.sessionId) return;
+    const sceneDoc = game.scenes?.get?.(session.sceneId) ?? (canvas.scene?.id === session.sceneId ? canvas.scene : null);
+    if (!sceneDoc) return;
+    const previousStory = sceneDoc.getFlag?.('arcane15', 'storyScene') || null;
+    if (previousStory?.active && previousStory?.ref) {
+      try { await sceneDoc.unsetFlag('arcane15', 'storyScene'); } catch (_) { await sceneDoc.setFlag('arcane15', 'storyScene', { active: false }); }
+      try { await (globalThis.AXVArcanaManager || game.arcane15?.arcana || game.arcane15?.ArcanaManager)?.clearSceneScopedBonuses?.(previousStory.ref); } catch (_) {}
+    }
+    await sceneDoc.setFlag('arcane15', 'combatScene', {
+      active: true,
+      ref: `combat:${session.sessionId}`,
+      label: `Combat — ${session.attacker?.name || 'Attaquant'} vs ${session.defender?.name || 'Défenseur'}`,
+      startedAt: Date.now(),
+      sessionId: session.sessionId
+    });
+  }
+
+  static async #deactivateCombatScene(session) {
+    if (!game.user?.isGM || !session?.sceneId || !session?.sessionId) return;
+    const sceneDoc = game.scenes?.get?.(session.sceneId) ?? (canvas.scene?.id === session.sceneId ? canvas.scene : null);
+    if (!sceneDoc) return;
+    const current = sceneDoc.getFlag?.('arcane15', 'combatScene') || null;
+    try { await sceneDoc.unsetFlag('arcane15', 'combatScene'); } catch (_) { await sceneDoc.setFlag('arcane15', 'combatScene', { active: false }); }
+    try {
+      const ref = current?.ref || `combat:${session.sessionId}`;
+      await (globalThis.AXVArcanaManager || game.arcane15?.arcana || game.arcane15?.ArcanaManager)?.clearSceneScopedBonuses?.(ref);
+    } catch (_) {}
   }
 
   static #activeGMId() {

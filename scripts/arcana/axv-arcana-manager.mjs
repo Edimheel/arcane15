@@ -789,6 +789,7 @@ export class ArcanaManager {
   static #socketRequestSeq = 0;
 
   static init() {
+    ArcanaManager.registerSceneSettings();
     Hooks.on("getSceneControlButtons", controls => ArcanaManager.injectSceneControl(controls));
     Hooks.on("preUpdateItem", (item, changed, options = {}) => {
       if (item?.type !== "atoutArcane" || !(item?.actor ?? item?.parent)) return;
@@ -840,14 +841,84 @@ export class ArcanaManager {
     Hooks.on("renderSceneControls", () => setTimeout(() => {
       ArcanaManager.renderPublicBanner();
       ArcanaManager.ensurePossessionButtonDom();
+      ArcanaManager.ensureSceneButtonDom();
     }, 0));
     Hooks.on("renderSidebarTab", () => setTimeout(() => ArcanaManager.renderPublicBanner(), 0));
-    Hooks.on("canvasReady", () => setTimeout(() => ArcanaManager.ensurePossessionButtonDom(), 50));
-    Hooks.on("ready", () => setTimeout(() => ArcanaManager.ensurePossessionButtonDom(), 200));
+    Hooks.on("canvasReady", () => setTimeout(() => {
+      ArcanaManager.ensurePossessionButtonDom();
+      ArcanaManager.ensureSceneButtonDom();
+    }, 50));
+    Hooks.on("ready", () => setTimeout(() => {
+      ArcanaManager.ensurePossessionButtonDom();
+      ArcanaManager.ensureSceneButtonDom();
+    }, 200));
     Hooks.on("renderChatMessageHTML", (message, html) => ArcanaManager.#bindChatButtons(message, html));
     Hooks.on("renderChatMessage", (message, html) => ArcanaManager.#bindChatButtons(message, html));
     ArcanaManager.#bindGlobalChatDelegation();
     ArcanaManager.#bindSystemSocket();
+  }
+
+  static registerSceneSettings() {
+    if (!game.settings?.settings?.has?.("arcane15.sceneActive")) {
+      game.settings.register("arcane15", "sceneActive", {
+        name: "Arcane XV scène active",
+        hint: "État interne du bouton de scène MJ.",
+        scope: "world",
+        config: false,
+        type: Boolean,
+        default: false
+      });
+    }
+  }
+
+  static isSceneActive() {
+    try {
+      return !!game.settings?.get?.("arcane15", "sceneActive");
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  static async setSceneActive(active) {
+    ArcanaManager.registerSceneSettings();
+    await game.settings.set("arcane15", "sceneActive", !!active);
+    ArcanaManager.refreshSceneButtonDom();
+  }
+
+  static #resetSceneRuntimeState(runtime = {}) {
+    const next = foundry.utils.deepClone(runtime || {});
+    next.shanghaiBonus = { value: 0, targetId: "", targetName: "", label: "" };
+    next.audienceBonus = { value: 0, label: "" };
+    next.merteuilBonus = { value: 0, targetId: "", targetName: "", label: "" };
+    next.sharedMerteuilBonus = { value: 0, sourceActorId: "", targetId: "", targetName: "", label: "" };
+    return next;
+  }
+
+  static async resetSceneCounters() {
+    const actors = (game.actors?.contents ?? []).filter(actor => actor?.type === "personnage");
+    for (const actor of actors) {
+      const runtime = actor.getFlag?.("arcane15", "arcanaRuntime") || {};
+      const next = ArcanaManager.#resetSceneRuntimeState(runtime);
+      await actor.setFlag("arcane15", "arcanaRuntime", next);
+      ArcanaManager.refreshUIForActor(actor);
+    }
+  }
+
+  static async startScene() {
+    // Conservé pour compatibilité, mais la logique de scène n'est plus pilotée par un démarrage manuel.
+    await ArcanaManager.setSceneActive(true);
+  }
+
+  static async endScene() {
+    if (!game.user?.isGM) return;
+    await ArcanaManager.resetSceneCounters();
+    await ArcanaManager.setSceneActive(false);
+    ui.notifications?.info?.("Fin de scène : compteurs remis à 0.");
+  }
+
+  static async toggleScene() {
+    if (!game.user?.isGM) return;
+    return ArcanaManager.endScene();
   }
 
   static async ready() {
@@ -935,6 +1006,13 @@ export class ArcanaManager {
           blind: !!data.options?.blind,
           useStandardSkillHandSubtitle: !!data.options?.useStandardSkillHandSubtitle,
           gmOnlyChat: !!data.options?.gmOnlyChat,
+          suppressChat: !!data.options?.suppressChat,
+          suppressLastSkillTest: !!data.options?.suppressLastSkillTest,
+          skipBoiteRecovery: !!data.options?.skipBoiteRecovery,
+          suppressModifierKeys: Array.isArray(data.options?.suppressModifierKeys) ? data.options.suppressModifierKeys : [],
+          targetActor: data.options?.targetActorId ? (game.actors?.get?.(String(data.options.targetActorId)) ?? null) : null,
+          isOpposition: !!data.options?.isOpposition,
+          oppositionOnly: !!data.options?.oppositionOnly,
           delegateToOwner: false,
           playedByOwner: false
         });
@@ -1073,7 +1151,14 @@ export class ArcanaManager {
           whisper: Array.isArray(options.whisper) ? options.whisper : null,
           blind: !!options.blind,
           useStandardSkillHandSubtitle: !!options.useStandardSkillHandSubtitle,
-          gmOnlyChat: !!options.gmOnlyChat
+          gmOnlyChat: !!options.gmOnlyChat,
+          suppressChat: !!options.suppressChat,
+          suppressLastSkillTest: !!options.suppressLastSkillTest,
+          skipBoiteRecovery: !!options.skipBoiteRecovery,
+          suppressModifierKeys: Array.isArray(options.suppressModifierKeys) ? options.suppressModifierKeys : [],
+          targetActorId: options.targetActor?.id ?? null,
+          isOpposition: !!options.isOpposition,
+          oppositionOnly: !!options.oppositionOnly
         }
       });
     });
@@ -1129,10 +1214,10 @@ export class ArcanaManager {
       if (k === "jusquici-tout-va-bien" && sessionFlags?.jusquiciUsed) badges.push("Héroïque utilisé");
       if (k === "actor-studio" && runtime?.pendingKnowledgeBonus?.value) badges.push(`Connaissance +${Number(runtime.pendingKnowledgeBonus.value)}`);
       if (k === "monte-cristo" && runtime?.pendingVolonteBonus?.value) badges.push(`Volonté +${Number(runtime.pendingVolonteBonus.value)}`);
-      if (k === "dame-de-shanghai" && runtime?.audienceBonus?.value) badges.push(`Social +${Number(runtime.audienceBonus.value)}`);
       if (k === "dame-de-shanghai" && runtime?.shanghaiBonus?.value && runtime?.shanghaiBonus?.targetName) badges.push(`${runtime.shanghaiBonus.targetName} : +${Number(runtime.shanghaiBonus.value)}`);
+      else if (k === "dame-de-shanghai" && runtime?.audienceBonus?.value) badges.push(`Social +${Number(runtime.audienceBonus.value)}`);
       if (k === "marquise-de-merteuil" && runtime?.merteuilBonus?.value && runtime?.merteuilBonus?.targetName) badges.push(`${runtime.merteuilBonus.targetName} : +${Number(runtime.merteuilBonus.value)}`);
-      if (k === "marquise-de-merteuil" && runtime?.sharedMerteuilBonus?.value) badges.push(`Prime partagée +${Number(runtime.sharedMerteuilBonus.value)}`);
+      else if (k === "marquise-de-merteuil" && runtime?.sharedMerteuilBonus?.value) badges.push(`Prime partagée +${Number(runtime.sharedMerteuilBonus.value)}`);
       if (k === "larnacoeur" && runtime?.larnacoeurCombat?.targetName) badges.push(`Combat : ${runtime.larnacoeurCombat.targetName}`);
       if (k === "keyser-soze" && runtime?.statuses?.keyserSozeUntargetable) badges.push("Ignore ciblage");
       if (k === "boite-de-chocolats" && actor.getFlag?.("arcane15", "pendingDestinyRecovery")) badges.push("Récup. Destin en attente");
@@ -1198,12 +1283,15 @@ export class ArcanaManager {
     return badges;
   }
 
-  static getSkillModifiers(actor, skillKey) {
+  static getSkillModifiers(actor, skillKey, context = {}) {
     const runtime = actor.getFlag?.("arcane15", "arcanaRuntime") || {};
     const labels = [];
     const consume = [];
     let net = 0;
     const skill = String(skillKey || "").trim();
+    const selectedTarget = context?.targetActor ?? Array.from(game.user?.targets ?? [])[0]?.actor ?? null;
+    const isOpposition = !!context?.isOpposition;
+    const suppressed = new Set((Array.isArray(context?.suppressModifierKeys) ? context.suppressModifierKeys : []).map(v => String(v || "").trim()).filter(Boolean));
 
     const pendingTechnique = runtime?.pendingTechniqueBonus;
     if (pendingTechnique?.value && skill.startsWith("technique")) {
@@ -1235,36 +1323,50 @@ export class ArcanaManager {
       }
     }
 
-    if (["eloquence", "autorite", "psychologie"].includes(skill) && runtime?.audienceBonus?.value) {
-      const bonus = Number(runtime.audienceBonus.value || 0);
-      if (bonus) {
-        net += bonus;
-        labels.push(`${runtime.audienceBonus.label || 'La dame de Shanghai'} +${bonus}`);
-      }
-    }
+    const socialSkills = ["eloquence", "autorite", "psychologie"];
+    const shanghaiEligible = socialSkills.includes(skill) || isOpposition;
 
-    const selectedTarget = Array.from(game.user?.targets ?? [])[0]?.actor ?? null;
-    if (selectedTarget && ["eloquence", "autorite", "psychologie"].includes(skill) && runtime?.shanghaiBonus?.value && String(runtime?.shanghaiBonus?.targetId || "") === String(selectedTarget.id || "")) {
+    const shanghaiApplies = !suppressed.has("shanghaiBonus")
+      && selectedTarget
+      && shanghaiEligible
+      && runtime?.shanghaiBonus?.value
+      && String(runtime?.shanghaiBonus?.targetId || "") === String(selectedTarget.id || "");
+
+    if (shanghaiApplies) {
       const bonus = Number(runtime.shanghaiBonus.value || 0);
       if (bonus) {
         net += bonus;
         labels.push(`${runtime.shanghaiBonus.label || 'La dame de Shanghai'} +${bonus}`);
+        consume.push("shanghaiBonus");
+      }
+    } else if (!suppressed.has("audienceBonus") && shanghaiEligible && runtime?.audienceBonus?.value) {
+      const bonus = Number(runtime.audienceBonus.value || 0);
+      if (bonus) {
+        net += bonus;
+        labels.push(`${runtime.audienceBonus.label || 'La dame de Shanghai'} +${bonus}`);
+        consume.push("audienceBonus");
       }
     }
 
-    if (selectedTarget && ["eloquence", "autorite", "psychologie", "combat1", "combat2", "combat3"].includes(skill) && runtime?.merteuilBonus?.value && String(runtime?.merteuilBonus?.targetId || "") === String(selectedTarget.id || "")) {
+    const merteuilApplies = !suppressed.has("merteuilBonus")
+      && selectedTarget
+      && isOpposition
+      && runtime?.merteuilBonus?.value
+      && String(runtime?.merteuilBonus?.targetId || "") === String(selectedTarget.id || "");
+
+    if (merteuilApplies) {
       const bonus = Number(runtime.merteuilBonus.value || 0);
       if (bonus) {
         net += bonus;
         labels.push(`${runtime.merteuilBonus.label || 'Marquise de Merteuil'} +${bonus}`);
+        consume.push("merteuilBonus");
       }
-    }
-
-    if (selectedTarget && ["eloquence", "autorite", "psychologie", "combat1", "combat2", "combat3"].includes(skill) && runtime?.sharedMerteuilBonus?.value && String(runtime?.sharedMerteuilBonus?.targetId || "") === String(selectedTarget.id || "")) {
+    } else if (!suppressed.has("sharedMerteuilBonus") && selectedTarget && isOpposition && runtime?.sharedMerteuilBonus?.value && String(runtime?.sharedMerteuilBonus?.targetId || "") === String(selectedTarget.id || "")) {
       const bonus = Number(runtime.sharedMerteuilBonus.value || 0);
       if (bonus) {
         net += bonus;
         labels.push(`${runtime.sharedMerteuilBonus.label || 'Prime partagée'} +${bonus}`);
+        consume.push("sharedMerteuilBonus");
       }
     }
 
@@ -1299,7 +1401,10 @@ export class ArcanaManager {
       delete parent[parts[parts.length - 1]];
       dirty = true;
     }
-    if (dirty) await actor.setFlag("arcane15", "arcanaRuntime", runtime);
+    if (dirty) {
+      await actor.setFlag("arcane15", "arcanaRuntime", runtime);
+      ArcanaManager.refreshUIForActor(actor);
+    }
   }
 
   static getRollActionButtons(actor, skillKey, context = {}) {
@@ -2444,7 +2549,27 @@ export class ArcanaManager {
     const connaissanceKey = Object.keys(skills).find(key => key.startsWith('connaissance')) || null;
     const target = Array.from(game.user?.targets ?? [])[0]?.actor ?? null;
     const runtime = foundry.utils.deepClone(writableActor.getFlag?.('arcane15', 'arcanaRuntime') || {});
-    const renderOppositionSummary = (titleText, bodyHtml) => renderPersonalAtoutChatCard({ title: titleText, mode: 'Effet courant', actorName: writableActor.name, body: bodyHtml, accent: '#5b1f43' });
+    const renderOppositionSummary = (titleText, bodyHtml) => renderPersonalAtoutChatCard({ title: titleText, mode: 'Effet courant', actorName: writableActor.name, body: bodyHtml, accent: '#3d5875' });
+    const renderOppositionParticipant = (labelText, roll) => `
+      <div style="display:flex; gap:10px; align-items:flex-start; border:1px solid rgba(0,0,0,.12); border-radius:12px; padding:10px; background:rgba(255,255,255,.72);">
+        <img src="${roll?.cardImg || 'icons/svg/hazard.svg'}" style="width:72px; height:108px; object-fit:cover; border-radius:8px; border:1px solid rgba(0,0,0,.25); flex:0 0 auto;" />
+        <div style="flex:1; min-width:0; overflow-wrap:anywhere; word-break:break-word;">
+          <div style="font-weight:900; font-size:14px; margin-bottom:4px;">${labelText}</div>
+          <div>Carte : <strong>${roll?.cardName || 'Carte'}</strong> <span style="opacity:.8;">(+${Number(roll?.cardValue || 0)})</span></div>
+          <div>Compétence : <strong>${roll?.skillName || ''}</strong> = <strong>${Number(roll?.skillTotal || 0)}</strong></div>
+          <div>Bonus / malus : <strong>${roll?.modifiersLine || 'aucun'}</strong></div>
+          <div style="margin-top:6px; font-weight:900; font-size:16px;">TOTAL : ${Number(roll?.finalTotal || 0)}</div>
+        </div>
+      </div>`;
+    const renderDetailedOppositionSummary = (titleText, actorLabel, actorRoll, targetLabel, targetRoll, conclusionHtml) => renderOppositionSummary(titleText, `
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px; align-items:start;">
+        ${renderOppositionParticipant(actorLabel, actorRoll)}
+        ${renderOppositionParticipant(targetLabel, targetRoll)}
+      </div>
+      <div style="margin-top:12px; padding:10px 12px; border-radius:12px; background:rgba(61,88,117,.10); border:1px solid rgba(61,88,117,.22);">
+        ${conclusionHtml}
+      </div>
+    `);
 
     switch (atoutKey) {
       case 'remy-julienne':
@@ -2494,7 +2619,14 @@ export class ArcanaManager {
           : `${target.name} résiste à <strong>${atout.name}</strong>${margin === 0 ? ' (égalité : la cible l’emporte).' : ` (marge <strong>${Math.abs(margin)}</strong>).`}`;
         return ChatMessage.create({
           speaker: ChatMessage.getSpeaker({ actor: writableActor }),
-          content: renderOppositionSummary(atout.name, body)
+          content: renderDetailedOppositionSummary(
+            atout.name,
+            `${writableActor.name} — ${actorRoll.skillName || 'Test'}`,
+            actorRoll,
+            `${target.name} — ${targetRoll.skillName || 'Test'}`,
+            targetRoll,
+            body
+          )
         });
       }
       case 'boite-de-chocolats':
@@ -2521,6 +2653,7 @@ export class ArcanaManager {
         if (!target) return ui.notifications?.warn?.('Cible un interlocuteur pour utiliser cet atout.');
         if (!artComedieKey) return ui.notifications?.warn?.('Compétence Art (Comédie) introuvable.');
 
+        const suppressModifierKeys = ['audienceBonus', 'shanghaiBonus', 'merteuilBonus', 'sharedMerteuilBonus'];
         const actorRoll = await ArcanaManager.#rollFixedSkill(writableActor, artComedieKey, {
           title: `${writableActor.name} — ${atout.name}`,
           subtitle: `${atout.name} : ${writableActor.name} choisit une carte pour séduire ${target.name}.`,
@@ -2529,7 +2662,14 @@ export class ArcanaManager {
           chatNote: `Opposition active : total de ${writableActor.name}`,
           useStandardSkillHandSubtitle: false,
           gmOnlyChat: true,
-          playedByOwner: true
+          suppressChat: true,
+          suppressLastSkillTest: true,
+          skipBoiteRecovery: true,
+          suppressModifierKeys,
+          playedByOwner: true,
+          targetActor: target,
+          isOpposition: true,
+          oppositionOnly: true
         });
         if (!actorRoll) return;
 
@@ -2541,7 +2681,14 @@ export class ArcanaManager {
           chatNote: `Opposition active : total de ${target.name}`,
           useStandardSkillHandSubtitle: false,
           gmOnlyChat: true,
-          playedByOwner: true
+          suppressChat: true,
+          suppressLastSkillTest: true,
+          skipBoiteRecovery: true,
+          suppressModifierKeys,
+          playedByOwner: true,
+          targetActor: writableActor,
+          isOpposition: true,
+          oppositionOnly: true
         });
         if (!targetRoll) return;
 
@@ -2549,21 +2696,37 @@ export class ArcanaManager {
         if (margin <= 0) {
           return ChatMessage.create({
             speaker: ChatMessage.getSpeaker({ actor: writableActor }),
-            content: renderOppositionSummary(atout.name, `${target.name} résiste à <strong>${atout.name}</strong>${margin === 0 ? ' (égalité : la cible l’emporte).' : ` (marge <strong>${Math.abs(margin)}</strong>).`}`)
+            content: renderDetailedOppositionSummary(
+              atout.name,
+              `${writableActor.name} — ${actorRoll.skillName || 'Art (Comédie)'}`,
+              actorRoll,
+              `${target.name} — ${targetRoll.skillName || 'Volonté'}`,
+              targetRoll,
+              `${target.name} résiste à <strong>${atout.name}</strong>${margin === 0 ? ' (égalité : la cible l’emporte).' : ` (marge <strong>${Math.abs(margin)}</strong>).`}`
+            )
           });
         }
 
+        delete runtime.audienceBonus;
         runtime.shanghaiBonus = { targetId: target.id, targetName: target.name, value: margin, label: atout.name };
         await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
         ArcanaManager.refreshUIForActor(writableActor);
         return ChatMessage.create({
           speaker: ChatMessage.getSpeaker({ actor: writableActor }),
-          content: renderOppositionSummary(atout.name, `Bonus de <strong>+${margin}</strong> contre ${target.name} en Éloquence, Autorité et Psychologie pour la scène.`)
+          content: renderDetailedOppositionSummary(
+            atout.name,
+            `${writableActor.name} — ${actorRoll.skillName || 'Art (Comédie)'}`,
+            actorRoll,
+            `${target.name} — ${targetRoll.skillName || 'Volonté'}`,
+            targetRoll,
+            `Prochain test d’Éloquence, d’Autorité ou de Psychologie contre <strong>${target.name}</strong> : <strong>+${margin}</strong>. Le bonus sera ensuite consommé.`
+          )
         });
       }
       case 'marquise-de-merteuil': {
         if (!target) return ui.notifications?.warn?.('Cible un interlocuteur pour utiliser cet atout.');
 
+        const suppressModifierKeys = ['audienceBonus', 'merteuilBonus', 'sharedMerteuilBonus'];
         const actorRoll = await ArcanaManager.#rollFixedSkill(writableActor, 'psychologie', {
           title: `${writableActor.name} — ${atout.name}`,
           subtitle: `${atout.name} : ${writableActor.name} choisit une carte pour analyser ${target.name}.`,
@@ -2572,7 +2735,14 @@ export class ArcanaManager {
           chatNote: `Opposition active : total de ${writableActor.name}`,
           useStandardSkillHandSubtitle: false,
           gmOnlyChat: true,
-          playedByOwner: true
+          suppressChat: true,
+          suppressLastSkillTest: true,
+          skipBoiteRecovery: true,
+          suppressModifierKeys,
+          playedByOwner: true,
+          targetActor: target,
+          isOpposition: true,
+          oppositionOnly: true
         });
         if (!actorRoll) return;
 
@@ -2584,7 +2754,14 @@ export class ArcanaManager {
           chatNote: `Opposition active : total de ${target.name}`,
           useStandardSkillHandSubtitle: false,
           gmOnlyChat: true,
-          playedByOwner: true
+          suppressChat: true,
+          suppressLastSkillTest: true,
+          skipBoiteRecovery: true,
+          suppressModifierKeys,
+          playedByOwner: true,
+          targetActor: writableActor,
+          isOpposition: true,
+          oppositionOnly: true
         });
         if (!targetRoll) return;
 
@@ -2592,7 +2769,14 @@ export class ArcanaManager {
         if (margin <= 0) {
           return ChatMessage.create({
             speaker: ChatMessage.getSpeaker({ actor: writableActor }),
-            content: renderOppositionSummary(atout.name, `${target.name} résiste à <strong>${atout.name}</strong>${margin === 0 ? ' (égalité : la cible l’emporte).' : ` (marge <strong>${Math.abs(margin)}</strong>).`}`)
+            content: renderDetailedOppositionSummary(
+              atout.name,
+              `${writableActor.name} — ${actorRoll.skillName || 'Psychologie'}`,
+              actorRoll,
+              `${target.name} — ${targetRoll.skillName || 'Psychologie'}`,
+              targetRoll,
+              `${target.name} résiste à <strong>${atout.name}</strong>${margin === 0 ? ' (égalité : la cible l’emporte).' : ` (marge <strong>${Math.abs(margin)}</strong>).`}`
+            )
           });
         }
 
@@ -2601,7 +2785,14 @@ export class ArcanaManager {
         ArcanaManager.refreshUIForActor(writableActor);
         return ChatMessage.create({
           speaker: ChatMessage.getSpeaker({ actor: writableActor }),
-          content: renderOppositionSummary(atout.name, `Bonus de <strong>+${margin}</strong> contre ${target.name} pour les futures oppositions de la scène, y compris en combat.`)
+          content: renderDetailedOppositionSummary(
+            atout.name,
+            `${writableActor.name} — ${actorRoll.skillName || 'Psychologie'}`,
+            actorRoll,
+            `${target.name} — ${targetRoll.skillName || 'Psychologie'}`,
+            targetRoll,
+            `Prochaine opposition contre <strong>${target.name}</strong> : <strong>+${margin}</strong>. Le bonus sera ensuite consommé.`
+          )
         });
       }
       default:
@@ -2794,91 +2985,75 @@ export class ArcanaManager {
         break;
       }
       case 'dame-de-shanghai': {
-        if (!target) return ui.notifications?.warn?.('Cible un interlocuteur pour utiliser cet atout.');
-        if (!artComedieKey) return ui.notifications?.warn?.('Compétence Art (Comédie) introuvable.');
-
-        const actorRoll = await ArcanaManager.#rollFixedSkill(writableActor, artComedieKey, {
-          title: `${writableActor.name} — ${atout.name}`,
-          subtitle: `${atout.name} : ${writableActor.name} choisit une carte pour séduire ${target.name}.`,
-          difficulty: 0,
-          chatTitle: `${writableActor.name} — ${atout.name}`,
-          chatNote: `Opposition active : total de ${writableActor.name}`,
-          useStandardSkillHandSubtitle: false,
-          gmOnlyChat: true,
-          playedByOwner: true
-        });
-        if (!actorRoll) return;
-
-        const targetRoll = await ArcanaManager.#rollFixedSkill(target, 'volonte', {
-          title: `${target.name} — Résister à ${atout.name}`,
-          subtitle: `${target.name} choisit une carte pour résister à ${writableActor.name}.`,
-          difficulty: 0,
-          chatTitle: `${target.name} — Résister à ${atout.name}`,
-          chatNote: `Opposition active : total de ${target.name}`,
-          useStandardSkillHandSubtitle: false,
-          gmOnlyChat: true,
-          playedByOwner: true
-        });
-        if (!targetRoll) return;
-
-        const margin = Number(actorRoll.finalTotal || 0) - Number(targetRoll.finalTotal || 0);
-        if (margin <= 0) {
-          return ChatMessage.create({
-            speaker: ChatMessage.getSpeaker({ actor: writableActor }),
-            content: renderOppositionSummary(atout.name, `${target.name} résiste à <strong>${atout.name}</strong>${margin === 0 ? ' (égalité : la cible l’emporte).' : ` (marge <strong>${Math.abs(margin)}</strong>).`}`)
-          });
-        }
-
-        runtime.shanghaiBonus = { targetId: target.id, targetName: target.name, value: margin, label: atout.name };
+        const draw = await ArcanaManager.#drawTemporaryCard(writableActor, `${atout.name} — bonus social`);
+        if (!draw) return;
+        delete runtime.shanghaiBonus;
+        runtime.audienceBonus = { value: Number(draw.value || 0), label: atout.name };
         await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
         ArcanaManager.refreshUIForActor(writableActor);
-        return ChatMessage.create({
+        await ChatMessage.create({
           speaker: ChatMessage.getSpeaker({ actor: writableActor }),
-          content: renderOppositionSummary(atout.name, `Bonus de <strong>+${margin}</strong> contre ${target.name} en Éloquence, Autorité et Psychologie pour la scène.`)
+          content: renderPersonalAtoutChatCard({
+            title: atout.name,
+            mode: 'Effet héroïque',
+            actorName: writableActor.name,
+            body: `
+              <div style="display:flex; align-items:center; gap:12px;">
+                <img src="${draw.img || 'icons/svg/hazard.svg'}" alt="${draw.name || 'Carte'}" style="width:72px; height:auto; border-radius:6px; box-shadow:0 0 0 1px rgba(0,0,0,.25);" />
+                <div>
+                  <div><strong>Carte piochée :</strong> ${draw.name || 'Carte'}</div>
+                  <div><strong>Valeur :</strong> +${Number(draw.value || 0)}</div>
+                  <div style="margin-top:4px;">Prochain test d’Éloquence, de Psychologie ou d’Autorité : <strong>+${Number(draw.value || 0)}</strong>. Le bonus sera ensuite consommé.</div>
+                </div>
+              </div>
+            `,
+            accent: '#3d5875'
+          })
         });
+        break;
       }
       case 'marquise-de-merteuil': {
-        if (!target) return ui.notifications?.warn?.('Cible un interlocuteur pour utiliser cet atout.');
-
-        const actorRoll = await ArcanaManager.#rollFixedSkill(writableActor, 'psychologie', {
-          title: `${writableActor.name} — ${atout.name}`,
-          subtitle: `${atout.name} : ${writableActor.name} choisit une carte pour analyser ${target.name}.`,
-          difficulty: 0,
-          chatTitle: `${writableActor.name} — ${atout.name}`,
-          chatNote: `Opposition active : total de ${writableActor.name}`,
-          useStandardSkillHandSubtitle: false,
-          gmOnlyChat: true,
-          playedByOwner: true
-        });
-        if (!actorRoll) return;
-
-        const targetRoll = await ArcanaManager.#rollFixedSkill(target, 'psychologie', {
-          title: `${target.name} — Résister à ${atout.name}`,
-          subtitle: `${target.name} choisit une carte pour masquer ses intentions face à ${writableActor.name}.`,
-          difficulty: 0,
-          chatTitle: `${target.name} — Résister à ${atout.name}`,
-          chatNote: `Opposition active : total de ${target.name}`,
-          useStandardSkillHandSubtitle: false,
-          gmOnlyChat: true,
-          playedByOwner: true
-        });
-        if (!targetRoll) return;
-
-        const margin = Number(actorRoll.finalTotal || 0) - Number(targetRoll.finalTotal || 0);
-        if (margin <= 0) {
-          return ChatMessage.create({
-            speaker: ChatMessage.getSpeaker({ actor: writableActor }),
-            content: renderOppositionSummary(atout.name, `${target.name} résiste à <strong>${atout.name}</strong>${margin === 0 ? ' (égalité : la cible l’emporte).' : ` (marge <strong>${Math.abs(margin)}</strong>).`}`)
-          });
+        if (!runtime?.merteuilBonus?.value || !runtime?.merteuilBonus?.targetId) {
+          return ui.notifications?.warn?.('Aucune prime active à partager pour Marquise de Merteuil.');
         }
 
-        runtime.merteuilBonus = { targetId: target.id, targetName: target.name, value: margin, label: atout.name };
-        await writableActor.setFlag('arcane15', 'arcanaRuntime', runtime);
-        ArcanaManager.refreshUIForActor(writableActor);
-        return ChatMessage.create({
-          speaker: ChatMessage.getSpeaker({ actor: writableActor }),
-          content: renderOppositionSummary(atout.name, `Bonus de <strong>+${margin}</strong> contre ${target.name} pour les futures oppositions de la scène, y compris en combat.`)
+        const companions = (game.actors?.contents ?? []).filter(a => {
+          if (!a) return false;
+          if (a.id === writableActor.id) return false;
+          if (a.type !== 'personnage') return false;
+          if (!a.hasPlayerOwner) return false;
+          return true;
         });
+
+        const shared = {
+          value: Number(runtime.merteuilBonus.value || 0),
+          label: `${atout.name} (partagé)`,
+          targetId: String(runtime.merteuilBonus.targetId || ''),
+          targetName: String(runtime.merteuilBonus.targetName || '')
+        };
+
+        const sharedTo = [];
+        for (const ally of companions) {
+          const allyRuntime = foundry.utils.deepClone(ally.getFlag?.('arcane15', 'arcanaRuntime') || {});
+          allyRuntime.sharedMerteuilBonus = shared;
+          await ally.setFlag('arcane15', 'arcanaRuntime', allyRuntime);
+          ArcanaManager.refreshUIForActor(ally);
+          sharedTo.push(ally.name);
+        }
+
+        await ChatMessage.create({
+          speaker: ChatMessage.getSpeaker({ actor: writableActor }),
+          content: renderPersonalAtoutChatCard({
+            title: atout.name,
+            mode: 'Effet héroïque',
+            actorName: writableActor.name,
+            body: sharedTo.length
+              ? `Prime de <strong>+${shared.value}</strong> contre <strong>${shared.targetName || 'la cible'}</strong> partagée à : <strong>${sharedTo.join(', ')}</strong>. Chaque compagnon la consommera sur sa prochaine opposition.`
+              : `Aucun compagnon joueur disponible pour partager la prime.`,
+            accent: '#3d5875'
+          })
+        });
+        break;
       }
       default:
         return ui.notifications?.info?.('Effet héroïque contextuel à gérer par le MJ.');
@@ -3720,16 +3895,15 @@ Héroïque : ${heroicText}">
   static injectSceneControl(controls) {
     if (!game.user?.isGM) return;
 
-    // Foundry v13 passe généralement un objet `controls` avec `controls.tokens.tools`.
-    // Certaines configurations / modules peuvent encore exposer une forme plus proche
-    // d'un tableau. On supporte les deux sans supposer que `tools` est un array.
+    // On conserve uniquement le bouton de possession dans les contrôles Foundry.
+    // Le bouton de fin de scène est rendu en flottant pour rester accessible hors combat.
     const tokenControls = Array.isArray(controls)
       ? (controls.find(c => c?.name === "tokens") ?? controls.find(c => c?.name === "token") ?? controls[0])
       : (controls?.tokens ?? controls?.token ?? null);
 
     if (!tokenControls) return;
 
-    const tool = {
+    const possessionTool = {
       name: "axv-possession",
       title: "Suivi de la possession",
       icon: "fas fa-book",
@@ -3739,22 +3913,22 @@ Héroïque : ${heroicText}">
       onClick: () => ArcanaManager.openPossessionTracker()
     };
 
-    // Cas Foundry v13 : tools est un objet clé -> tool.
     if (tokenControls.tools && !Array.isArray(tokenControls.tools) && typeof tokenControls.tools === "object") {
-      if (tokenControls.tools[tool.name]) return;
-      tokenControls.tools[tool.name] = tool;
+      tokenControls.tools[possessionTool.name] = possessionTool;
+      delete tokenControls.tools["axv-scene-toggle"];
       return;
     }
 
-    // Fallback si une structure renvoie encore un tableau.
     if (Array.isArray(tokenControls.tools)) {
-      if (tokenControls.tools.some(t => (t?.name ?? t) === tool.name)) return;
-      tokenControls.tools.push(tool);
+      const filtered = tokenControls.tools.filter(t => (t?.name ?? t) !== "axv-scene-toggle");
+      const index = filtered.findIndex(t => (t?.name ?? t) === possessionTool.name);
+      if (index >= 0) filtered[index] = possessionTool;
+      else filtered.push(possessionTool);
+      tokenControls.tools = filtered;
       return;
     }
 
-    // Dernier fallback : on initialise au format objet, compatible v13.
-    tokenControls.tools = { [tool.name]: tool };
+    tokenControls.tools = { [possessionTool.name]: possessionTool };
   }
 
   static ensurePossessionButtonDom() {
@@ -3786,6 +3960,55 @@ Héroïque : ${heroicText}">
       ArcanaManager.openPossessionTracker();
     });
     list.appendChild(button);
+  }
+
+  static ensureSceneButtonDom() {
+    if (!game.user?.isGM) return;
+
+    const host = document.getElementById('interface') || document.body;
+    if (!host) return;
+
+    let button = document.getElementById('axv-scene-end-floating');
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'axv-scene-end-floating';
+      button.type = 'button';
+      button.dataset.axvSceneEnd = '1';
+      button.addEventListener('click', ev => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        void ArcanaManager.endScene();
+      });
+      host.appendChild(button);
+    }
+
+    Object.assign(button.style, {
+      position: 'fixed',
+      right: '18px',
+      bottom: '18px',
+      zIndex: '80',
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '8px',
+      padding: '10px 14px',
+      borderRadius: '999px',
+      border: '1px solid rgba(0,0,0,.45)',
+      background: 'linear-gradient(180deg, #314a63 0%, #24384c 100%)',
+      color: '#f3f6fb',
+      boxShadow: '0 6px 18px rgba(0,0,0,.35)',
+      cursor: 'pointer',
+      fontSize: '14px',
+      fontWeight: '600'
+    });
+
+    ArcanaManager.refreshSceneButtonDom(button);
+  }
+
+  static refreshSceneButtonDom(existingButton = null) {
+    const button = existingButton ?? document.getElementById('axv-scene-end-floating');
+    if (!button) return;
+    button.title = 'Fin de scène';
+    button.innerHTML = '<i class="fas fa-stop-circle"></i><span>Fin de scène</span>';
   }
 
   static #bindGlobalChatDelegation() {
@@ -3950,7 +4173,7 @@ Héroïque : ${heroicText}">
     });
   }
 
-  static async #rollFixedSkill(actor, skillKey, { title, subtitle, difficulty, chatTitle, chatNote, bonus = 0, whisper = null, blind = false, customChatContent = null, useStandardSkillHandSubtitle = false, gmOnlyChat = false, playedByOwner = false, delegateToOwner = true } = {}) {
+  static async #rollFixedSkill(actor, skillKey, { title, subtitle, difficulty, chatTitle, chatNote, bonus = 0, whisper = null, blind = false, customChatContent = null, useStandardSkillHandSubtitle = false, gmOnlyChat = false, suppressChat = false, suppressLastSkillTest = false, skipBoiteRecovery = false, suppressModifierKeys = [], playedByOwner = false, delegateToOwner = true, targetActor = null, isOpposition = false, oppositionOnly = false } = {}) {
     CardManager.ensureSocket();
 
     const speakerActor = actor ?? null;
@@ -3978,7 +4201,14 @@ Héroïque : ${heroicText}">
           whisper,
           blind,
           useStandardSkillHandSubtitle,
-          gmOnlyChat
+          gmOnlyChat,
+          suppressChat,
+          suppressLastSkillTest,
+          skipBoiteRecovery,
+          suppressModifierKeys,
+          targetActor,
+          isOpposition,
+          oppositionOnly
         });
       }
     }
@@ -3999,7 +4229,7 @@ Héroïque : ${heroicText}">
     const skillName = `${capitalized(skillKey)}${skillData?.label ? ` (${skillData.label})` : ""}`;
     const baseSkillValue = Number(skillData?.total ?? 0);
     const malEnPointMod = (handActor?.system?.stats?.malEnPoint || handActor?.getFlag?.("arcane15", "malEnPoint")) ? -1 : 0;
-    const arcanaMods = ArcanaManager.getSkillModifiers(handActor, skillKey);
+    const arcanaMods = ArcanaManager.getSkillModifiers(handActor, skillKey, { targetActor, isOpposition, suppressModifierKeys });
     const skillValue = baseSkillValue + malEnPointMod + Number(arcanaMods?.net || 0) + Number(bonus || 0);
 
     const cards = hand.cards.contents.slice().sort((a, b) => {
@@ -4111,8 +4341,8 @@ Héroïque : ${heroicText}">
           const cardImg = CardManager._getCardImg(card) || "icons/svg/hazard.svg";
           const isJoker = CardManager._isJoker(card);
           const finalTotal = skillValue + cardValue;
-          const success = finalTotal >= Number(difficulty || 0);
-          const verdict = success ? "RÉUSSITE" : "ÉCHEC";
+          const success = oppositionOnly ? null : (finalTotal >= Number(difficulty || 0));
+          const verdict = oppositionOnly ? "" : (success ? "RÉUSSITE" : "ÉCHEC");
 
           const defaultChatContent = `
   <div class="axv-chat-card" style="width:100%; max-width:100%; box-sizing:border-box; border:1px solid rgba(0,0,0,.2); border-radius:14px; overflow:hidden; background:#fff;">
@@ -4126,10 +4356,10 @@ Héroïque : ${heroicText}">
         <div>Compétence : <strong>${skillValue}</strong></div>
         ${modifiersLine ? `<div>Modificateurs : <strong>${modifiersLine}</strong></div>` : ""}
         <div>Carte : <strong>+${cardValue}</strong></div>
-        <div>Difficulté : <strong>${difficulty}</strong></div>
+        ${oppositionOnly ? '' : `<div>Difficulté : <strong>${difficulty}</strong></div>`}
         ${chatNote ? `<div style="margin-top:6px; font-size:12px; opacity:.85;">${chatNote}</div>` : ""}
         <div style="margin-top:10px; font-weight:900; font-size:18px;">TOTAL : ${finalTotal}</div>
-        <div style="margin-top:6px; font-weight:900; font-size:16px;">${verdict}</div>
+        ${oppositionOnly ? '' : `<div style="margin-top:6px; font-weight:900; font-size:16px;">${verdict}</div>`}
       </div>
     </div>
   </div>`;
@@ -4137,40 +4367,46 @@ Héroïque : ${heroicText}">
             ? (customChatContent({ displayActor, handActor, speakerActor, skillKey, skillName, skillValue, card, cardId: card.id, cardName, cardImg, cardValue, difficulty: Number(difficulty || 0), finalTotal, success, verdict, modifiersLine, chatTitle, chatNote }) || defaultChatContent)
             : defaultChatContent;
 
-          if (gmOnlyChat) {
-            await ArcanaManager.#createGMOnlyChatMessage({
-              actor: speakerActor ?? handActor,
-              content: renderedChatContent
-            });
-          } else {
-            await ChatMessage.create({
-              content: renderedChatContent,
-              speaker: ChatMessage.getSpeaker({ actor: speakerActor ?? handActor }),
-              ...(Array.isArray(whisper) && whisper.length ? { whisper } : {}),
-              ...(blind ? { blind: true } : {})
-            });
+          if (!suppressChat) {
+            if (gmOnlyChat) {
+              await ArcanaManager.#createGMOnlyChatMessage({
+                actor: speakerActor ?? handActor,
+                content: renderedChatContent
+              });
+            } else {
+              await ChatMessage.create({
+                content: renderedChatContent,
+                speaker: ChatMessage.getSpeaker({ actor: speakerActor ?? handActor }),
+                ...(Array.isArray(whisper) && whisper.length ? { whisper } : {}),
+                ...(blind ? { blind: true } : {})
+              });
+            }
           }
 
-          try {
-            await handActor.setFlag("arcane15", "lastSkillTest", {
-              skillKey,
-              skillName,
-              difficulty: Number(difficulty || 0),
-              success,
-              timestamp: Date.now(),
-              finalTotal,
-              skillTotal: skillValue,
-              cardValue,
-              source: "fixed"
-            });
-          } catch (flagError) {
-            console.warn("[ARCANE XV][ARCANA] unable to store lastSkillTest", flagError);
+          if (!suppressLastSkillTest && !oppositionOnly) {
+            try {
+              await handActor.setFlag("arcane15", "lastSkillTest", {
+                skillKey,
+                skillName,
+                difficulty: Number(difficulty || 0),
+                success,
+                timestamp: Date.now(),
+                finalTotal,
+                skillTotal: skillValue,
+                cardValue,
+                source: "fixed"
+              });
+            } catch (flagError) {
+              console.warn("[ARCANE XV][ARCANA] unable to store lastSkillTest", flagError);
+            }
           }
 
-          try {
-            await ArcanaManager.handleBoiteDeChocolatsRecovery(handActor, { success });
-          } catch (recoveryError) {
-            console.warn('[ARCANE XV][ARCANA] boite-de-chocolats recovery failed', recoveryError);
+          if (!skipBoiteRecovery && !oppositionOnly) {
+            try {
+              await ArcanaManager.handleBoiteDeChocolatsRecovery(handActor, { success });
+            } catch (recoveryError) {
+              console.warn('[ARCANE XV][ARCANA] boite-de-chocolats recovery failed', recoveryError);
+            }
           }
 
           if (arcanaMods?.consume?.length) {
@@ -4186,7 +4422,18 @@ Héroïque : ${heroicText}">
           }
 
           await dlg.close();
-          resolve({ success, difficulty: Number(difficulty || 0), finalTotal, cardId: card.id, cardValue, skillTotal: skillValue });
+          resolve({
+            success,
+            difficulty: Number(difficulty || 0),
+            finalTotal,
+            cardId: card.id,
+            cardValue,
+            skillTotal: skillValue,
+            cardName,
+            cardImg,
+            modifiersLine,
+            skillName
+          });
         } catch (err) {
           console.error("[ARCANE XV][ARCANA] rollFixedSkill error", err);
           ui.notifications?.error?.("Erreur lors du test d’arcane (voir console).");
