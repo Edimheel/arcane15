@@ -7,6 +7,7 @@ import { Arcane15ActorSheet } from "./scripts/actor/actor-sheet.mjs";
 import { Arcane15AtoutArcaneSheet } from "./scripts/item/item-sheet.mjs";
 import { CardManager } from "./scripts/actor/card-manager.mjs";
 import "./scripts/actor/axv-combat.mjs";
+import "./scripts/actor/axv-combat-chat-visibility.mjs";
 import { ArcanaManager } from "./scripts/arcana/axv-arcana-manager.mjs";
 
 Hooks.once("init", () => {
