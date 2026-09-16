@@ -61,7 +61,7 @@ function axvCombatBuildPlayerHtml(fullHtml) {
       return depth(b) - depth(a);
     })
     .forEach((el) => {
-      if (!el?.isConnected) return;
+      if (!host.contains(el)) return;
       const text = String(el.textContent || "").replace(/\s+/g, " ").trim();
       if (!text) return;
 
@@ -83,7 +83,7 @@ function axvCombatBuildPlayerHtml(fullHtml) {
   Array.from(host.querySelectorAll("div, span"))
     .reverse()
     .forEach((el) => {
-      if (!el?.isConnected) return;
+      if (!host.contains(el)) return;
       const hasMedia = !!el.querySelector("img, strong");
       const text = String(el.textContent || "").trim();
       if (!hasMedia && !text && el.children.length === 0) axvCombatRemoveElement(el);
